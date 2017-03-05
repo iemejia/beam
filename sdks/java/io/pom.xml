@@ -73,6 +73,7 @@
     <module>jms</module>
     <module>kafka</module>
     <module>kinesis</module>
+    <module>memcached</module>
     <module>mongodb</module>
     <module>mqtt</module>
   </modules>
