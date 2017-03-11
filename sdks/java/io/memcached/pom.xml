@@ -22,13 +22,13 @@
   <parent>
     <groupId>org.apache.beam</groupId>
     <artifactId>beam-sdks-java-io-parent</artifactId>
-    <version>0.6.0-SNAPSHOT</version>
+    <version>0.7.0-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
 
   <artifactId>beam-sdks-java-io-memcache</artifactId>
-  <name>Apache Beam :: SDKs :: Java :: IO :: Memcache</name>
-  <description>Library to read and write from/to Memcache</description>
+  <name>Apache Beam :: SDKs :: Java :: IO :: Memcached</name>
+  <description>Library to read and write from/to Memcached</description>
 
   <properties>
     <folsom.version>0.7.2</folsom.version>
@@ -56,11 +56,11 @@
                 <relocations>
                   <relocation>
                     <pattern>com.google.common</pattern>
-                    <shadedPattern>org.apache.beam.sdk.io.hdfs.repackaged.com.google.common</shadedPattern>
+                    <shadedPattern>org.apache.beam.sdk.io.memcached.repackaged.com.google.common</shadedPattern>
                   </relocation>
                   <relocation>
                     <pattern>com.google.thirdparty</pattern>
-                    <shadedPattern>org.apache.beam.sdk.io.hdfs.repackaged.com.google.thirdparty</shadedPattern>
+                    <shadedPattern>org.apache.beam.sdk.io.memcached.repackaged.com.google.thirdparty</shadedPattern>
                   </relocation>
                 </relocations>
               </configuration>
@@ -100,20 +100,20 @@
     </dependency>
 
     <dependency>
-      <groupId>org.slf4j</groupId>
-      <artifactId>slf4j-api</artifactId>
-    </dependency>
-
-    <dependency>
       <groupId>com.google.guava</groupId>
       <artifactId>guava</artifactId>
       <version>${folsom.guava.version}</version>
     </dependency>
 
     <dependency>
-      <groupId>com.google.code.findbugs</groupId>
-      <artifactId>jsr305</artifactId>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-api</artifactId>
     </dependency>
+
+    <!--<dependency>-->
+      <!--<groupId>com.google.code.findbugs</groupId>-->
+      <!--<artifactId>jsr305</artifactId>-->
+    <!--</dependency>-->
 
     <!-- test dependencies -->
     <dependency>
@@ -122,6 +122,21 @@
       <classifier>tests</classifier>
       <scope>test</scope>
     </dependency>
+
+    <!--<dependency>-->
+      <!--<groupId>com.spotify</groupId>-->
+      <!--<artifactId>folsom</artifactId>-->
+      <!--<version>${folsom.version}</version>-->
+      <!--<classifier>tests</classifier>-->
+      <!--<scope>test</scope>-->
+    <!--</dependency>-->
+
+    <!--<dependency>-->
+      <!--<groupId>com.thimbleware.jmemcached</groupId>-->
+      <!--<artifactId>jmemcached-core</artifactId>-->
+      <!--<version>1.0.0</version>-->
+      <!--<scope>test</scope>-->
+    <!--</dependency>-->
 
     <dependency>
       <groupId>org.apache.beam</groupId>

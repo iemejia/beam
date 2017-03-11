@@ -19,6 +19,6 @@
 /**
  * Defines transforms for reading and writing from HBase.
  *
- * @see org.apache.beam.sdk.io.hbase.HBaseIO
+ * @see org.apache.beam.sdk.io.memcached.MemcachedIO
  */
 package org.apache.beam.sdk.io.memcached;
