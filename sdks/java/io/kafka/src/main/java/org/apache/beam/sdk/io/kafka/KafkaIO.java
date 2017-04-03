@@ -377,7 +377,7 @@ public class KafkaIO {
      * Mainly used for tests and demo applications.
      */
     public Read<K, V> withMaxNumRecords(long maxNumRecords) {
-      return toBuilder().setMaxNumRecords(maxNumRecords).setMaxReadTime(null).build();
+      return toBuilder().setMaxNumRecords(maxNumRecords).build();
     }
 
     /**
@@ -387,7 +387,7 @@ public class KafkaIO {
      * applications.
      */
     public Read<K, V> withMaxReadTime(Duration maxReadTime) {
-      return toBuilder().setMaxNumRecords(Long.MAX_VALUE).setMaxReadTime(maxReadTime).build();
+      return toBuilder().setMaxReadTime(maxReadTime).build();
     }
 
     /**
@@ -451,10 +451,10 @@ public class KafkaIO {
 
       PTransform<PBegin, PCollection<KafkaRecord<K, V>>> transform = unbounded;
 
-      if (getMaxNumRecords() < Long.MAX_VALUE) {
-        transform = unbounded.withMaxNumRecords(getMaxNumRecords());
-      } else if (getMaxReadTime() != null) {
-        transform = unbounded.withMaxReadTime(getMaxReadTime());
+      if (getMaxNumRecords() < Long.MAX_VALUE || getMaxReadTime() != null) {
+        transform = unbounded
+            .withMaxReadTime(getMaxReadTime())
+            .withMaxNumRecords(getMaxNumRecords());
       }
 
       return input.getPipeline().apply(transform);
