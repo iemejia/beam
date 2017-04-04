@@ -48,7 +48,6 @@ import org.junit.rules.TestName;
 public class SparkPipelineStateTest implements Serializable {
 
   private static class MyCustomException extends RuntimeException {
-
     MyCustomException(final String message) {
       super(message);
     }
@@ -91,7 +90,6 @@ public class SparkPipelineStateTest implements Serializable {
   }
 
   private Pipeline getPipeline(final SparkPipelineOptions options) {
-
     final Pipeline pipeline = Pipeline.create(options);
     final String name = testName.getMethodName() + "(isStreaming=" + options.isStreaming() + ")";
 
@@ -102,8 +100,24 @@ public class SparkPipelineStateTest implements Serializable {
     return pipeline;
   }
 
-  private void testFailedPipeline(final SparkPipelineOptions options) throws Exception {
+  private Pipeline getPipelineThatHangsForever(final SparkPipelineOptions options) {
+    final Pipeline pipeline = Pipeline.create(options);
 
+    pipeline
+        .apply(getValues(options)).setCoder(StringUtf8Coder.of())
+        .apply(ParDo.of(
+            new DoFn<String, String>() {
+              @ProcessElement
+              public void hang(ProcessContext context) throws InterruptedException {
+                // Hangs "forever"
+                Thread.sleep(Long.MAX_VALUE);
+              }
+            }));
+
+    return pipeline;
+  }
+
+  private void testFailedPipeline(final SparkPipelineOptions options) throws Exception {
     SparkPipelineResult result = null;
 
     try {
@@ -133,37 +147,24 @@ public class SparkPipelineStateTest implements Serializable {
   }
 
   private void testTimeoutPipeline(final SparkPipelineOptions options) throws Exception {
-
-    final Pipeline pipeline = getPipeline(options);
-
+    final Pipeline pipeline = getPipelineThatHangsForever(options);
     final SparkPipelineResult result = (SparkPipelineResult) pipeline.run();
-
     result.waitUntilFinish(Duration.millis(1));
-
     assertThat(result.getState(), is(PipelineResult.State.RUNNING));
-
     result.cancel();
   }
 
   private void testCanceledPipeline(final SparkPipelineOptions options) throws Exception {
-
     final Pipeline pipeline = getPipeline(options);
-
     final SparkPipelineResult result = (SparkPipelineResult) pipeline.run();
-
     result.cancel();
-
     assertThat(result.getState(), is(PipelineResult.State.CANCELLED));
   }
 
   private void testRunningPipeline(final SparkPipelineOptions options) throws Exception {
-
     final Pipeline pipeline = getPipeline(options);
-
     final SparkPipelineResult result = (SparkPipelineResult) pipeline.run();
-
     assertThat(result.getState(), is(PipelineResult.State.RUNNING));
-
     result.cancel();
   }
 
