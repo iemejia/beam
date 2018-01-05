@@ -461,7 +461,6 @@ public final class TranslationUtils {
   /**
    * checking if we can avoid Serialization - relevant to RDDs. DStreams are memory ser in spark.
    * @param level StorageLevel required
-   * @return
    */
   public static boolean avoidRddSerialization(StorageLevel level) {
     return level.equals(StorageLevel.MEMORY_ONLY()) || level.equals(StorageLevel.MEMORY_ONLY_2());

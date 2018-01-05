@@ -90,7 +90,7 @@ public final class SparkRunner extends PipelineRunner<SparkPipelineResult> {
   private static final Logger LOG = LoggerFactory.getLogger(SparkRunner.class);
 
   /** Options used in this pipeline runner. */
-  private final SparkPipelineOptions mOptions;
+  private final SparkPipelineOptions options;
 
   /**
    * Creates and returns a new SparkRunner with default options. In particular, against a spark
@@ -142,7 +142,7 @@ public final class SparkRunner extends PipelineRunner<SparkPipelineResult> {
    * thread.
    */
   private SparkRunner(SparkPipelineOptions options) {
-    mOptions = options;
+    this.options = options;
   }
 
   @Override
@@ -161,10 +161,10 @@ public final class SparkRunner extends PipelineRunner<SparkPipelineResult> {
     // visit the pipeline to determine the translation mode
     detectTranslationMode(pipeline);
 
-    if (mOptions.isStreaming()) {
-      CheckpointDir checkpointDir = new CheckpointDir(mOptions.getCheckpointDir());
+    if (options.isStreaming()) {
+      CheckpointDir checkpointDir = new CheckpointDir(options.getCheckpointDir());
       SparkRunnerStreamingContextFactory streamingContextFactory =
-          new SparkRunnerStreamingContextFactory(pipeline, mOptions, checkpointDir);
+          new SparkRunnerStreamingContextFactory(pipeline, options, checkpointDir);
       final JavaStreamingContext jssc =
           JavaStreamingContext.getOrCreate(
               checkpointDir.getSparkCheckpointDir().toString(), streamingContextFactory);
@@ -178,7 +178,7 @@ public final class SparkRunner extends PipelineRunner<SparkPipelineResult> {
               new MetricsAccumulator.AccumulatorCheckpointingSparkListener()));
 
       // register user-defined listeners.
-      for (JavaStreamingListener listener : mOptions.as(SparkContextOptions.class).getListeners()) {
+      for (JavaStreamingListener listener : options.as(SparkContextOptions.class).getListeners()) {
         LOG.info("Registered listener {}." + listener.getClass().getSimpleName());
         jssc.addStreamingListener(new JavaStreamingListenerWrapper(listener));
       }
@@ -191,7 +191,7 @@ public final class SparkRunner extends PipelineRunner<SparkPipelineResult> {
       // SparkRunnerStreamingContextFactory is because the factory is not called when resuming
       // from checkpoint (When not resuming from checkpoint initAccumulators will be called twice
       // but this is fine since it is idempotent).
-      initAccumulators(mOptions, jssc.sparkContext());
+      initAccumulators(options, jssc.sparkContext());
 
       startPipeline =
           executorService.submit(
@@ -208,14 +208,14 @@ public final class SparkRunner extends PipelineRunner<SparkPipelineResult> {
       result = new SparkPipelineResult.StreamingMode(startPipeline, jssc);
     } else {
       // create the evaluation context
-      final JavaSparkContext jsc = SparkContextFactory.getSparkContext(mOptions);
-      final EvaluationContext evaluationContext = new EvaluationContext(jsc, pipeline, mOptions);
+      final JavaSparkContext jsc = SparkContextFactory.getSparkContext(options);
+      final EvaluationContext evaluationContext = new EvaluationContext(jsc, pipeline, options);
       translator = new TransformTranslator.Translator();
 
       // update the cache candidates
       updateCacheCandidates(pipeline, translator, evaluationContext);
 
-      initAccumulators(mOptions, jsc);
+      initAccumulators(options, jsc);
 
       startPipeline =
           executorService.submit(
@@ -233,8 +233,8 @@ public final class SparkRunner extends PipelineRunner<SparkPipelineResult> {
       result = new SparkPipelineResult.BatchMode(startPipeline, jsc);
     }
 
-    if (mOptions.getEnableSparkMetricSinks()) {
-      registerMetricsSource(mOptions.getAppName());
+    if (options.getEnableSparkMetricSinks()) {
+      registerMetricsSource(options.getAppName());
     }
 
     return result;
@@ -268,7 +268,7 @@ public final class SparkRunner extends PipelineRunner<SparkPipelineResult> {
     pipeline.traverseTopologically(detector);
     if (detector.getTranslationMode().equals(TranslationMode.STREAMING)) {
       // set streaming mode if it's a streaming pipeline
-      this.mOptions.setStreaming(true);
+      this.options.setStreaming(true);
     }
   }
 

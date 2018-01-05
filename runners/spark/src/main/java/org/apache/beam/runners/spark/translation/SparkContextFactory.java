@@ -18,6 +18,9 @@
 
 package org.apache.beam.runners.spark.translation;
 
+import java.io.File;
+import java.util.ArrayList;
+import java.util.List;
 import org.apache.beam.runners.spark.SparkContextOptions;
 import org.apache.beam.runners.spark.SparkPipelineOptions;
 import org.apache.beam.runners.spark.coders.BeamSparkRunnerRegistrator;
@@ -94,7 +97,10 @@ public final class SparkContextFactory {
       }
 
       if (contextOptions.getFilesToStage() != null && !contextOptions.getFilesToStage().isEmpty()) {
-        conf.setJars(contextOptions.getFilesToStage().toArray(new String[0]));
+        // Filter out paths that are not jar files to avoid IllegalArgumentException on directories
+        // This is a temporal fix until BEAM-3371 is done.
+        List<String> filesToStage = filterDirectories(contextOptions.getFilesToStage());
+        conf.setJars(filesToStage.toArray(new String[filesToStage.size()]));
       }
 
       conf.setAppName(contextOptions.getAppName());
@@ -102,5 +108,18 @@ public final class SparkContextFactory {
       conf.set("spark.kryo.registrator", BeamSparkRunnerRegistrator.class.getName());
       return new JavaSparkContext(conf);
     }
+  }
+
+  private static List<String> filterDirectories(List<String> paths) {
+    List<String> filePaths = new ArrayList<>();
+    for (String path : paths) {
+      File file = new File(path);
+      if (file.isDirectory()) {
+        LOG.info("Skipping non-jar path: {}", path);
+        continue;
+      }
+      filePaths.add(path);
+    }
+    return filePaths;
   }
 }
