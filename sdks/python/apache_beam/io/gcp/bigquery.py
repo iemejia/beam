@@ -78,6 +78,16 @@ When creating a BigQuery input transform, users should provide either a query
 or a table. Pipeline construction will fail with a validation error if neither
 or both are specified.
 
+**Time partitioned tables**
+
+BigQuery sink currently does not fully support writing to BigQuery
+time partitioned tables. But writing to a *single* partition may work if
+that does not involve creating a new table (for example, when writing to an
+existing table with `create_disposition=CREATE_NEVER` and
+`write_disposition=WRITE_APPEND`).
+BigQuery source supports reading from a single time partition with the partition
+decorator specified as a part of the table identifier.
+
 *** Short introduction to BigQuery concepts ***
 Tables have rows (TableRow) and each row has cells (TableCell).
 A table has a schema (TableSchema), which in turn describes the schema of each
@@ -114,14 +124,14 @@ from apache_beam import coders
 from apache_beam.internal.gcp import auth
 from apache_beam.internal.gcp.json_value import from_json_value
 from apache_beam.internal.gcp.json_value import to_json_value
+from apache_beam.io.gcp.internal.clients import bigquery
+from apache_beam.options.pipeline_options import GoogleCloudOptions
 from apache_beam.runners.dataflow.native_io import iobase as dataflow_io
 from apache_beam.transforms import DoFn
 from apache_beam.transforms import ParDo
 from apache_beam.transforms import PTransform
 from apache_beam.transforms.display import DisplayDataItem
 from apache_beam.utils import retry
-from apache_beam.options.pipeline_options import GoogleCloudOptions
-from apache_beam.io.gcp.internal.clients import bigquery
 
 # Protect against environments where bigquery library is not available.
 # pylint: disable=wrong-import-order, wrong-import-position
@@ -1412,6 +1422,9 @@ bigquery_v2_messages.TableSchema):
       raise TypeError('Unexpected schema argument: %s.' % schema)
 
   def expand(self, pcoll):
+    if self.table_reference.projectId is None:
+      self.table_reference.projectId = pcoll.pipeline.options.view_as(
+          GoogleCloudOptions).project
     bigquery_write_fn = BigQueryWriteFn(
         table_id=self.table_reference.tableId,
         dataset_id=self.table_reference.datasetId,

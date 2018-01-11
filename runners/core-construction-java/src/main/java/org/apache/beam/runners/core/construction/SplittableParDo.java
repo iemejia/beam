@@ -24,6 +24,8 @@ import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import javax.annotation.Nullable;
+import org.apache.beam.model.pipeline.v1.RunnerApi;
 import org.apache.beam.runners.core.construction.PTransformTranslation.RawPTransform;
 import org.apache.beam.sdk.annotations.Experimental;
 import org.apache.beam.sdk.coders.Coder;
@@ -295,6 +297,12 @@ public class SplittableParDo<InputT, OutputT, RestrictionT>
     public String getUrn() {
       return SPLITTABLE_PROCESS_KEYED_ELEMENTS_URN;
     }
+
+    @Nullable
+    @Override
+    public RunnerApi.FunctionSpec getSpec() {
+      return null;
+    }
   }
 
   /**
@@ -315,7 +323,9 @@ public class SplittableParDo<InputT, OutputT, RestrictionT>
   private static class PairWithRestrictionFn<InputT, OutputT, RestrictionT>
       extends DoFn<InputT, KV<InputT, RestrictionT>> {
     private DoFn<InputT, OutputT> fn;
-    private transient DoFnInvoker<InputT, OutputT> invoker;
+
+    // Initialized in setup()
+    private transient @Nullable DoFnInvoker<InputT, OutputT> invoker;
 
     PairWithRestrictionFn(DoFn<InputT, OutputT> fn) {
       this.fn = fn;
@@ -339,7 +349,9 @@ public class SplittableParDo<InputT, OutputT, RestrictionT>
   private static class SplitRestrictionFn<InputT, RestrictionT>
       extends DoFn<KV<InputT, RestrictionT>, KV<InputT, RestrictionT>> {
     private final DoFn<InputT, ?> splittableFn;
-    private transient DoFnInvoker<InputT, ?> invoker;
+
+    // Initialized in setup()
+    private transient @Nullable DoFnInvoker<InputT, ?> invoker;
 
     SplitRestrictionFn(DoFn<InputT, ?> splittableFn) {
       this.splittableFn = splittableFn;

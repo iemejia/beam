@@ -17,11 +17,10 @@
  */
 package org.apache.beam.sdk.io;
 
-import static org.apache.beam.sdk.io.TFRecordIO.CompressionType;
-import static org.apache.beam.sdk.io.TFRecordIO.CompressionType.AUTO;
-import static org.apache.beam.sdk.io.TFRecordIO.CompressionType.GZIP;
-import static org.apache.beam.sdk.io.TFRecordIO.CompressionType.NONE;
-import static org.apache.beam.sdk.io.TFRecordIO.CompressionType.ZLIB;
+import static org.apache.beam.sdk.io.Compression.AUTO;
+import static org.apache.beam.sdk.io.Compression.DEFLATE;
+import static org.apache.beam.sdk.io.Compression.GZIP;
+import static org.apache.beam.sdk.io.Compression.UNCOMPRESSED;
 import static org.apache.beam.sdk.transforms.display.DisplayDataMatchers.hasDisplayItem;
 import static org.hamcrest.Matchers.isIn;
 import static org.junit.Assert.assertEquals;
@@ -34,11 +33,8 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
-import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.SimpleFileVisitor;
-import java.nio.file.attribute.BasicFileAttributes;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
@@ -51,13 +47,11 @@ import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.transforms.ParDo;
 import org.apache.beam.sdk.transforms.display.DisplayData;
 import org.apache.beam.sdk.values.PCollection;
-import org.junit.AfterClass;
-import org.junit.BeforeClass;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.rules.ExpectedException;
-import org.junit.rules.RuleChain;
+import org.junit.rules.TemporaryFolder;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
 
@@ -93,58 +87,37 @@ public class TFRecordIOTest {
   private static final Iterable<String> EMPTY = Collections.emptyList();
   private static final Iterable<String> LARGE = makeLines(1000);
 
-  private static Path tempFolder;
+  @Rule
+  public TemporaryFolder tempFolder = new TemporaryFolder();
 
+  @Rule
+  public TestPipeline readPipeline = TestPipeline.create();
 
-  public TestPipeline p = TestPipeline.create();
+  @Rule
+  public TestPipeline writePipeline = TestPipeline.create();
 
+  @Rule
   public ExpectedException expectedException = ExpectedException.none();
-
-  @Rule
-  public TestPipeline p2 = TestPipeline.create();
-
-  @Rule
-  public RuleChain ruleChain = RuleChain.outerRule(expectedException).around(p);
-
-  @BeforeClass
-  public static void setupClass() throws IOException {
-    tempFolder = Files.createTempDirectory("TFRecordIOTest");
-  }
-
-  @AfterClass
-  public static void teardownClass() throws IOException {
-    Files.walkFileTree(tempFolder, new SimpleFileVisitor<Path>() {
-      @Override
-      public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
-        Files.delete(file);
-        return FileVisitResult.CONTINUE;
-      }
-
-      @Override
-      public FileVisitResult postVisitDirectory(Path dir, IOException exc) throws IOException {
-        Files.delete(dir);
-        return FileVisitResult.CONTINUE;
-      }
-    });
-  }
 
   @Test
   public void testReadNamed() {
-    p.enableAbandonedNodeEnforcement(false);
+    writePipeline.enableAbandonedNodeEnforcement(false);
 
     assertEquals(
         "TFRecordIO.Read/Read.out",
-        p.apply(TFRecordIO.read().from("foo.*").withoutValidation()).getName());
+        writePipeline.apply(TFRecordIO.read().from("foo.*").withoutValidation()).getName());
     assertEquals(
         "MyRead/Read.out",
-        p.apply("MyRead", TFRecordIO.read().from("foo.*").withoutValidation()).getName());
+        writePipeline
+            .apply("MyRead", TFRecordIO.read().from("foo.*").withoutValidation())
+            .getName());
   }
 
   @Test
   public void testReadDisplayData() {
     TFRecordIO.Read read = TFRecordIO.read()
         .from("foo.*")
-        .withCompressionType(GZIP)
+        .withCompression(GZIP)
         .withoutValidation();
 
     DisplayData displayData = DisplayData.from(read);
@@ -161,7 +134,7 @@ public class TFRecordIOTest {
         .withSuffix("bar")
         .withShardNameTemplate("-SS-of-NN-")
         .withNumShards(100)
-        .withCompressionType(GZIP);
+        .withCompression(GZIP);
 
     DisplayData displayData = DisplayData.from(write);
 
@@ -230,31 +203,33 @@ public class TFRecordIOTest {
   }
 
   private void runTestRead(byte[] data, String[] expected) throws IOException {
-    File tmpFile = Files.createTempFile(tempFolder, "file", ".tfrecords").toFile();
+    File tmpFile =
+        Files.createTempFile(tempFolder.getRoot().toPath(), "file", ".tfrecords").toFile();
     String filename = tmpFile.getPath();
 
-    FileOutputStream fos = new FileOutputStream(tmpFile);
-    fos.write(data);
-    fos.close();
+    try (FileOutputStream fos = new FileOutputStream(tmpFile)) {
+      fos.write(data);
+    }
 
     TFRecordIO.Read read = TFRecordIO.read().from(filename);
-    PCollection<String> output = p.apply(read).apply(ParDo.of(new ByteArrayToString()));
+    PCollection<String> output = writePipeline.apply(read).apply(ParDo.of(new ByteArrayToString()));
 
     PAssert.that(output).containsInAnyOrder(expected);
-    p.run();
+    writePipeline.run();
   }
 
   private void runTestWrite(String[] elems, String ...base64) throws IOException {
-    File tmpFile = Files.createTempFile(tempFolder, "file", ".tfrecords").toFile();
+    File tmpFile =
+        Files.createTempFile(tempFolder.getRoot().toPath(), "file", ".tfrecords").toFile();
     String filename = tmpFile.getPath();
 
-    PCollection<byte[]> input = p.apply(Create.of(Arrays.asList(elems)))
+    PCollection<byte[]> input = writePipeline.apply(Create.of(Arrays.asList(elems)))
         .apply(ParDo.of(new StringToByteArray()));
 
     TFRecordIO.Write write = TFRecordIO.write().to(filename).withoutSharding();
     input.apply(write);
 
-    p.run();
+    writePipeline.run();
 
     FileInputStream fis = new FileInputStream(tmpFile);
     String written = BaseEncoding.base64().encode(ByteStreams.toByteArray(fis));
@@ -265,25 +240,25 @@ public class TFRecordIOTest {
   @Test
   @Category(NeedsRunner.class)
   public void runTestRoundTrip() throws IOException {
-    runTestRoundTrip(LARGE, 10, ".tfrecords", NONE, NONE);
+    runTestRoundTrip(LARGE, 10, ".tfrecords", UNCOMPRESSED, UNCOMPRESSED);
   }
 
   @Test
   @Category(NeedsRunner.class)
   public void runTestRoundTripWithEmptyData() throws IOException {
-    runTestRoundTrip(EMPTY, 10, ".tfrecords", NONE, NONE);
+    runTestRoundTrip(EMPTY, 10, ".tfrecords", UNCOMPRESSED, UNCOMPRESSED);
   }
 
   @Test
   @Category(NeedsRunner.class)
   public void runTestRoundTripWithOneShards() throws IOException {
-    runTestRoundTrip(LARGE, 1, ".tfrecords", NONE, NONE);
+    runTestRoundTrip(LARGE, 1, ".tfrecords", UNCOMPRESSED, UNCOMPRESSED);
   }
 
   @Test
   @Category(NeedsRunner.class)
   public void runTestRoundTripWithSuffix() throws IOException {
-    runTestRoundTrip(LARGE, 10, ".suffix", NONE, NONE);
+    runTestRoundTrip(LARGE, 10, ".suffix", UNCOMPRESSED, UNCOMPRESSED);
   }
 
   @Test
@@ -295,13 +270,13 @@ public class TFRecordIOTest {
   @Test
   @Category(NeedsRunner.class)
   public void runTestRoundTripZlib() throws IOException {
-    runTestRoundTrip(LARGE, 10, ".tfrecords", ZLIB, ZLIB);
+    runTestRoundTrip(LARGE, 10, ".tfrecords", DEFLATE, DEFLATE);
   }
 
   @Test
   @Category(NeedsRunner.class)
   public void runTestRoundTripUncompressedFilesWithAuto() throws IOException {
-    runTestRoundTrip(LARGE, 10, ".tfrecords", NONE, AUTO);
+    runTestRoundTrip(LARGE, 10, ".tfrecords", UNCOMPRESSED, AUTO);
   }
 
   @Test
@@ -313,33 +288,62 @@ public class TFRecordIOTest {
   @Test
   @Category(NeedsRunner.class)
   public void runTestRoundTripZlibFilesWithAuto() throws IOException {
-    runTestRoundTrip(LARGE, 10, ".tfrecords", ZLIB, AUTO);
+    runTestRoundTrip(LARGE, 10, ".tfrecords", DEFLATE, AUTO);
   }
 
   private void runTestRoundTrip(Iterable<String> elems,
                                 int numShards,
                                 String suffix,
-                                CompressionType writeCompressionType,
-                                CompressionType readCompressionType) throws IOException {
-    String outputName = "file";
-    Path baseDir = Files.createTempDirectory(tempFolder, "test-rt");
-    String baseFilename = baseDir.resolve(outputName).toString();
+                                Compression writeCompression,
+                                Compression readCompression) throws IOException {
+    Path baseDir = Files.createTempDirectory(tempFolder.getRoot().toPath(), "test-rt");
+    String outputNameViaWrite = "via-write";
+    String baseFilenameViaWrite = baseDir.resolve(outputNameViaWrite).toString();
+    String outputNameViaSink = "via-sink";
+    String baseFilenameViaSink = baseDir.resolve(outputNameViaSink).toString();
 
-    TFRecordIO.Write write = TFRecordIO.write().to(baseFilename)
-        .withNumShards(numShards)
-        .withSuffix(suffix)
-        .withCompressionType(writeCompressionType);
-    p.apply(Create.of(elems).withCoder(StringUtf8Coder.of()))
-        .apply(ParDo.of(new StringToByteArray()))
-        .apply(write);
-    p.run();
+    PCollection<byte[]> data =
+        writePipeline.apply(Create.of(elems).withCoder(StringUtf8Coder.of()))
+            .apply(ParDo.of(new StringToByteArray()));
+    data
+        .apply(
+            "Write via TFRecordIO.write",
+            TFRecordIO.write()
+                .to(baseFilenameViaWrite)
+                .withNumShards(numShards)
+                .withSuffix(suffix)
+                .withCompression(writeCompression));
 
-    TFRecordIO.Read read = TFRecordIO.read().from(baseFilename + "*")
-        .withCompressionType(readCompressionType);
-    PCollection<String> output = p2.apply(read).apply(ParDo.of(new ByteArrayToString()));
+    data.apply(
+        "Write via TFRecordIO.sink",
+        FileIO.<byte[]>write()
+            .via(TFRecordIO.sink())
+            .to(baseDir.toString())
+            .withPrefix(outputNameViaSink)
+            .withSuffix(suffix)
+            .withCompression(writeCompression)
+            .withIgnoreWindowing());
+    writePipeline.run();
 
-    PAssert.that(output).containsInAnyOrder(elems);
-    p2.run();
+    PAssert.that(
+            readPipeline
+                .apply(
+                    "Read written by TFRecordIO.write",
+                    TFRecordIO.read()
+                        .from(baseFilenameViaWrite + "*")
+                        .withCompression(readCompression))
+                .apply("To string first", ParDo.of(new ByteArrayToString())))
+        .containsInAnyOrder(elems);
+    PAssert.that(
+            readPipeline
+                .apply(
+                    "Read written by TFRecordIO.sink",
+                    TFRecordIO.read()
+                        .from(baseFilenameViaSink + "*")
+                        .withCompression(readCompression))
+                .apply("To string second", ParDo.of(new ByteArrayToString())))
+        .containsInAnyOrder(elems);
+    readPipeline.run();
   }
 
   private static Iterable<String> makeLines(int n) {

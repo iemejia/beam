@@ -68,7 +68,7 @@ public final class DefaultFilenamePolicy extends FilenamePolicy {
    * write windowed files. In cases when user does specify shard template to be used then provided
    * template will be used for both windowed and non-windowed file names.
    */
-  private static final String DEFAULT_WINDOWED_SHARD_TEMPLATE =
+  public static final String DEFAULT_WINDOWED_SHARD_TEMPLATE =
       "W-P" + DEFAULT_UNWINDOWED_SHARD_TEMPLATE;
 
   /*
@@ -83,7 +83,7 @@ public final class DefaultFilenamePolicy extends FilenamePolicy {
    * objects to be dynamically generated.
    */
   public static class Params implements Serializable {
-    private final ValueProvider<ResourceId> baseFilename;
+    @Nullable private final ValueProvider<ResourceId> baseFilename;
     private final String shardTemplate;
     private final boolean explicitTemplate;
     private final String suffix;
@@ -271,8 +271,8 @@ public final class DefaultFilenamePolicy extends FilenamePolicy {
       String suffix,
       int shardNum,
       int numShards,
-      String paneStr,
-      String windowStr) {
+      @Nullable String paneStr,
+      @Nullable String windowStr) {
     String prefix = extractFilename(baseFilename);
     // Matcher API works with StringBuffer, rather than StringBuilder.
     StringBuffer sb = new StringBuffer();
@@ -368,26 +368,21 @@ public final class DefaultFilenamePolicy extends FilenamePolicy {
 
   @Override
   public void populateDisplayData(DisplayData.Builder builder) {
-    String filenamePattern;
-    if (params.baseFilename.isAccessible()) {
-      filenamePattern =
-          String.format("%s%s%s", params.baseFilename.get(), params.shardTemplate, params.suffix);
-    } else {
-      filenamePattern =
-          String.format("%s%s%s", params.baseFilename, params.shardTemplate, params.suffix);
-    }
-
-    String outputPrefixString = null;
-    outputPrefixString =
+    String displayBaseFilename =
         params.baseFilename.isAccessible()
             ? params.baseFilename.get().toString()
-            : params.baseFilename.toString();
-    builder.add(DisplayData.item("filenamePattern", filenamePattern).withLabel("Filename Pattern"));
-    builder.add(DisplayData.item("filePrefix", outputPrefixString).withLabel("Output File Prefix"));
-    builder.add(DisplayData.item("fileSuffix", params.suffix).withLabel("Output file Suffix"));
+            : ("(" + params.baseFilename + ")");
+    builder.add(
+        DisplayData.item(
+                "filenamePattern",
+                String.format("%s%s%s", displayBaseFilename, params.shardTemplate, params.suffix))
+            .withLabel("Filename pattern"));
+    builder.add(
+        DisplayData.item("filePrefix", params.baseFilename).withLabel("Output File Prefix"));
     builder.add(
         DisplayData.item("shardNameTemplate", params.shardTemplate)
             .withLabel("Output Shard Name Template"));
+    builder.add(DisplayData.item("fileSuffix", params.suffix).withLabel("Output file Suffix"));
   }
 
   private static String extractFilename(ResourceId input) {

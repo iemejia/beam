@@ -68,7 +68,7 @@ if StrictVersion(_PIP_VERSION) < StrictVersion(REQUIRED_PIP_VERSION):
   )
 
 
-REQUIRED_CYTHON_VERSION = '0.23.2'
+REQUIRED_CYTHON_VERSION = '0.26.1'
 try:
   _CYTHON_VERSION = get_distribution('cython').version
   if StrictVersion(_CYTHON_VERSION) < StrictVersion(REQUIRED_CYTHON_VERSION):
@@ -98,13 +98,18 @@ REQUIRED_PACKAGES = [
     'avro>=1.8.1,<2.0.0',
     'crcmod>=1.7,<2.0',
     'dill==0.2.6',
-    'grpcio>=1.0,<2.0',
+    'grpcio>=1.0,<2',
     'httplib2>=0.8,<0.10',
     'mock>=1.0.1,<3.0.0',
-    'oauth2client>=2.0.1,<4.0.0',
-    'protobuf>=3.2.0,<=3.3.0',
+    'oauth2client>=2.0.1,<5',
+    # grpcio 1.8.1 and above requires protobuf 3.5.0.post1.
+    'protobuf>=3.5.0.post1,<4',
     'pyyaml>=3.12,<4.0.0',
+    'pyvcf>=0.6.8,<0.7.0',
+    'six>=1.9,<1.12',
     'typing>=3.6.0,<3.7.0',
+    'futures>=3.1.1,<4.0.0',
+    'hdfs3>=0.3.0,<0.4.0',
     ]
 
 REQUIRED_SETUP_PACKAGES = [
@@ -113,12 +118,11 @@ REQUIRED_SETUP_PACKAGES = [
 
 REQUIRED_TEST_PACKAGES = [
     'pyhamcrest>=1.9,<2.0',
-    # Six required by nose plugins management.
-    'six>=1.9',
     ]
 
 GCP_REQUIREMENTS = [
-  'google-apitools>=0.5.10,<=0.5.11',
+  # oauth2client >=4 only works with google-apitools>=0.5.18.
+  'google-apitools>=0.5.18,<=0.5.20',
   'proto-google-cloud-datastore-v1>=0.90.0,<=0.90.4',
   'googledatastore==7.0.1',
   'google-cloud-pubsub==0.26.0',
@@ -154,7 +158,7 @@ setuptools.setup(
     author_email=PACKAGE_EMAIL,
     packages=setuptools.find_packages(),
     package_data={'apache_beam': [
-        '*/*.pyx', '*/*/*.pyx', '*/*.pxd', '*/*/*.pxd', 'testing/data/*']},
+        '*/*.pyx', '*/*/*.pyx', '*/*.pxd', '*/*/*.pxd', 'testing/data/*.yaml']},
     ext_modules=cythonize([
         'apache_beam/**/*.pyx',
         'apache_beam/coders/coder_impl.py',
@@ -169,6 +173,7 @@ setuptools.setup(
     ]),
     setup_requires=REQUIRED_SETUP_PACKAGES,
     install_requires=REQUIRED_PACKAGES,
+    python_requires='>=2.7,<3.0',
     test_suite='nose.collector',
     tests_require=REQUIRED_TEST_PACKAGES,
     extras_require={

@@ -88,11 +88,10 @@ import types
 
 from apache_beam.typehints import native_type_compatibility
 from apache_beam.typehints import typehints
-from apache_beam.typehints.typehints import check_constraint
 from apache_beam.typehints.typehints import CompositeTypeHintError
 from apache_beam.typehints.typehints import SimpleTypeHintError
+from apache_beam.typehints.typehints import check_constraint
 from apache_beam.typehints.typehints import validate_composite_type_param
-
 
 __all__ = [
     'with_input_types',
@@ -118,7 +117,7 @@ def getargspec(func):
   try:
     return _original_getargspec(func)
   except TypeError:
-    if isinstance(func, (type, types.ClassType)):
+    if isinstance(func, type):
       argspec = getargspec(func.__init__)
       del argspec.args[0]
       return argspec
@@ -262,7 +261,7 @@ def getcallargs_forhints(func, *typeargs, **typekwargs):
   packed_typeargs += list(typeargs[len(packed_typeargs):])
   try:
     callargs = inspect.getcallargs(func, *packed_typeargs, **typekwargs)
-  except TypeError, e:
+  except TypeError as e:
     raise TypeCheckError(e)
   if argspec.defaults:
     # Declare any default arguments to be Any.

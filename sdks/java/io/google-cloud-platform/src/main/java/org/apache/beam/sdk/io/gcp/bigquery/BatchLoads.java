@@ -41,6 +41,7 @@ import org.apache.beam.sdk.io.gcp.bigquery.BigQueryIO.Write.CreateDisposition;
 import org.apache.beam.sdk.io.gcp.bigquery.BigQueryIO.Write.WriteDisposition;
 import org.apache.beam.sdk.io.gcp.bigquery.WriteBundlesToFiles.Result;
 import org.apache.beam.sdk.options.PipelineOptions;
+import org.apache.beam.sdk.options.ValueProvider;
 import org.apache.beam.sdk.transforms.Create;
 import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.transforms.Flatten;
@@ -127,11 +128,13 @@ class BatchLoads<DestinationT>
   private long maxFileSize;
   private int numFileShards;
   private Duration triggeringFrequency;
+  private ValueProvider<String> customGcsTempLocation;
 
   BatchLoads(WriteDisposition writeDisposition, CreateDisposition createDisposition,
              boolean singletonTable,
              DynamicDestinations<?, DestinationT> dynamicDestinations,
-             Coder<DestinationT> destinationCoder) {
+             Coder<DestinationT> destinationCoder,
+             ValueProvider<String> customGcsTempLocation) {
     bigQueryServices = new BigQueryServicesImpl();
     this.writeDisposition = writeDisposition;
     this.createDisposition = createDisposition;
@@ -142,6 +145,7 @@ class BatchLoads<DestinationT>
     this.maxFileSize = DEFAULT_MAX_FILE_SIZE;
     this.numFileShards = DEFAULT_NUM_FILE_SHARDS;
     this.triggeringFrequency = null;
+    this.customGcsTempLocation = customGcsTempLocation;
   }
 
   void setTestServices(BigQueryServices bigQueryServices) {
@@ -174,7 +178,16 @@ class BatchLoads<DestinationT>
   @Override
   public void validate(PipelineOptions options) {
     // We will use a BigQuery load job -- validate the temp location.
-    String tempLocation = options.getTempLocation();
+    String tempLocation;
+    if (customGcsTempLocation == null) {
+      tempLocation = options.getTempLocation();
+    } else {
+      if (!customGcsTempLocation.isAccessible()) {
+        // Can't perform verification in this case.
+        return;
+      }
+      tempLocation = customGcsTempLocation.get();
+    }
     checkArgument(
         !Strings.isNullOrEmpty(tempLocation),
         "BigQueryIO.Write needs a GCS temp location to store temp files.");
@@ -196,7 +209,7 @@ class BatchLoads<DestinationT>
     checkArgument(numFileShards > 0);
     Pipeline p = input.getPipeline();
     final PCollectionView<String> jobIdTokenView = createJobIdView(p);
-    final PCollectionView<String> tempFilePrefixView = createTempFilePrefixView(jobIdTokenView);
+    final PCollectionView<String> tempFilePrefixView = createTempFilePrefixView(p, jobIdTokenView);
     // The user-supplied triggeringDuration is often chosen to to control how many BigQuery load
     // jobs are generated, to prevent going over BigQuery's daily quota for load jobs. If this
     // is set to a large value, currently we have to buffer all the data unti the trigger fires.
@@ -216,7 +229,6 @@ class BatchLoads<DestinationT>
                 .discardingFiredPanes());
     PCollection<WriteBundlesToFiles.Result<DestinationT>> results =
         writeShardedFiles(inputInGlobalWindow, tempFilePrefixView);
-
     // Apply the user's trigger before we start generating BigQuery load jobs.
     results =
         results.apply(
@@ -266,7 +278,7 @@ class BatchLoads<DestinationT>
         .apply(WithKeys.<Void, KV<TableDestination, String>>of((Void) null))
         .setCoder(
             KvCoder.of(
-                VoidCoder.of(), KvCoder.of(TableDestinationCoder.of(), StringUtf8Coder.of())))
+                VoidCoder.of(), KvCoder.of(TableDestinationCoderV2.of(), StringUtf8Coder.of())))
         .apply(GroupByKey.<Void, KV<TableDestination, String>>create())
         .apply(Values.<Iterable<KV<TableDestination, String>>>create())
         .apply(
@@ -283,7 +295,7 @@ class BatchLoads<DestinationT>
   public WriteResult expandUntriggered(PCollection<KV<DestinationT, TableRow>> input) {
     Pipeline p = input.getPipeline();
     final PCollectionView<String> jobIdTokenView = createJobIdView(p);
-    final PCollectionView<String> tempFilePrefixView = createTempFilePrefixView(jobIdTokenView);
+    final PCollectionView<String> tempFilePrefixView = createTempFilePrefixView(p, jobIdTokenView);
     PCollection<KV<DestinationT, TableRow>> inputInGlobalWindow =
         input.apply(
             "rewindowIntoGlobal",
@@ -323,7 +335,7 @@ class BatchLoads<DestinationT>
 
     tempTables
         .apply("ReifyRenameInput", new ReifyAsIterable<KV<TableDestination, String>>())
-        .setCoder(IterableCoder.of(KvCoder.of(TableDestinationCoder.of(), StringUtf8Coder.of())))
+        .setCoder(IterableCoder.of(KvCoder.of(TableDestinationCoderV2.of(), StringUtf8Coder.of())))
         .apply(
             "WriteRenameUntriggered",
             ParDo.of(
@@ -352,25 +364,33 @@ class BatchLoads<DestinationT>
   }
 
   // Generate the temporary-file prefix.
-  private PCollectionView<String> createTempFilePrefixView(PCollectionView<String> jobIdView) {
-    return ((PCollection<String>) jobIdView.getPCollection())
+  private PCollectionView<String> createTempFilePrefixView(
+      Pipeline p, final PCollectionView<String> jobIdView) {
+    return p
+        .apply(Create.of(""))
         .apply(
             "GetTempFilePrefix",
             ParDo.of(
                 new DoFn<String, String>() {
                   @ProcessElement
                   public void getTempFilePrefix(ProcessContext c) {
+                    String tempLocationRoot;
+                    if (customGcsTempLocation != null) {
+                      tempLocationRoot = customGcsTempLocation.get();
+                    } else {
+                      tempLocationRoot = c.getPipelineOptions().getTempLocation();
+                    }
                     String tempLocation =
                         resolveTempLocation(
-                            c.getPipelineOptions().getTempLocation(),
+                            tempLocationRoot,
                             "BigQueryWriteTemp",
-                            c.element());
+                            c.sideInput(jobIdView));
                     LOG.info(
                         "Writing BigQuery temporary files to {} before loading them.",
                         tempLocation);
                     c.output(tempLocation);
                   }
-                }))
+                }).withSideInputs(jobIdView))
         .apply("TempFilePrefixView", View.<String>asSingleton());
   }
 
@@ -480,15 +500,14 @@ class BatchLoads<DestinationT>
         .apply("MultiPartitionsReshuffle", Reshuffle.<ShardedKey<DestinationT>, List<String>>of())
         .apply(
             "MultiPartitionsWriteTables",
-            ParDo.of(
-                    new WriteTables<>(
+            new WriteTables<>(
                         false,
                         bigQueryServices,
                         jobIdTokenView,
                         WriteDisposition.WRITE_EMPTY,
                         CreateDisposition.CREATE_IF_NEEDED,
-                        dynamicDestinations))
-                .withSideInputs(sideInputs));
+                        sideInputs,
+                        dynamicDestinations));
   }
 
   // In the case where the files fit into a single load job, there's no need to write temporary
@@ -510,15 +529,14 @@ class BatchLoads<DestinationT>
         .apply("SinglePartitionsReshuffle", Reshuffle.<ShardedKey<DestinationT>, List<String>>of())
         .apply(
             "SinglePartitionWriteTables",
-            ParDo.of(
-                    new WriteTables<>(
+            new WriteTables<>(
                         true,
                         bigQueryServices,
                         jobIdTokenView,
                         writeDisposition,
                         createDisposition,
-                        dynamicDestinations))
-                .withSideInputs(sideInputs));
+                        sideInputs,
+                        dynamicDestinations));
   }
 
   private WriteResult writeResult(Pipeline p) {

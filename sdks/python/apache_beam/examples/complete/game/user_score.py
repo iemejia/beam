@@ -61,6 +61,8 @@ import logging
 
 import apache_beam as beam
 from apache_beam.metrics.metric import Metrics
+from apache_beam.options.pipeline_options import PipelineOptions
+from apache_beam.options.pipeline_options import SetupOptions
 
 
 class ParseGameEventFn(beam.DoFn):
@@ -93,6 +95,7 @@ class ParseGameEventFn(beam.DoFn):
       logging.error('Parse error on "%s"', elem)
 
 
+# [START extract_and_sum_score]
 class ExtractAndSumScore(beam.PTransform):
   """A transform to extract key/score information and sum the scores.
   The constructor argument `field` determines whether 'team' or 'user' info is
@@ -106,6 +109,7 @@ class ExtractAndSumScore(beam.PTransform):
     return (pcoll
             | beam.Map(lambda elem: (elem[self.field], elem['score']))
             | beam.CombinePerKey(sum))
+# [END extract_and_sum_score]
 
 
 class UserScore(beam.PTransform):
@@ -117,6 +121,7 @@ class UserScore(beam.PTransform):
         | 'ExtractAndSumScore' >> ExtractAndSumScore('user'))
 
 
+# [START main]
 def run(argv=None):
   """Main entry point; defines and runs the user_score pipeline."""
   parser = argparse.ArgumentParser()
@@ -134,13 +139,23 @@ def run(argv=None):
 
   args, pipeline_args = parser.parse_known_args(argv)
 
-  with beam.Pipeline(argv=pipeline_args) as p:
+  options = PipelineOptions(pipeline_args)
+
+  # We use the save_main_session option because one or more DoFn's in this
+  # workflow rely on global context (e.g., a module imported at module level).
+  options.view_as(SetupOptions).save_main_session = True
+
+  with beam.Pipeline(options=options) as p:
+    def format_user_score_sums(user_score):
+      (user, score) = user_score
+      return 'user: %s, total_score: %s' % (user, score)
+
     (p  # pylint: disable=expression-not-assigned
      | 'ReadInputText' >> beam.io.ReadFromText(args.input)
      | 'UserScore' >> UserScore()
-     | 'FormatUserScoreSums' >> beam.Map(
-         lambda (user, score): 'user: %s, total_score: %s' % (user, score))
+     | 'FormatUserScoreSums' >> beam.Map(format_user_score_sums)
      | 'WriteUserScoreSums' >> beam.io.WriteToText(args.output))
+# [END main]
 
 
 if __name__ == '__main__':

@@ -17,6 +17,8 @@
  */
 package org.apache.beam.sdk.io.gcp.bigquery;
 
+import static com.google.common.base.Preconditions.checkArgument;
+
 import com.google.api.services.bigquery.model.Table;
 import com.google.api.services.bigquery.model.TableReference;
 import com.google.api.services.bigquery.model.TableRow;
@@ -73,7 +75,7 @@ public class CreateTables<DestinationT>
   }
 
   CreateTables<DestinationT> withTestServices(BigQueryServices bqServices) {
-    return new CreateTables<DestinationT>(createDisposition, bqServices, dynamicDestinations);
+    return new CreateTables<>(createDisposition, bqServices, dynamicDestinations);
   }
 
   @Override
@@ -91,6 +93,20 @@ public class CreateTables<DestinationT>
                     dynamicDestinations.setSideInputAccessorFromProcessContext(context);
                     TableDestination tableDestination =
                         dynamicDestinations.getTable(context.element().getKey());
+                    checkArgument(
+                        tableDestination != null,
+                        "DynamicDestinations.getTable() may not return null, "
+                            + "but %s returned null for destination %s",
+                        dynamicDestinations,
+                        context.element().getKey());
+                    checkArgument(
+                        tableDestination.getTableSpec() != null,
+                        "DynamicDestinations.getTable() must return a TableDestination "
+                            + "with a non-null table spec, but %s returned %s for destination %s,"
+                            + "which has a null table spec",
+                        dynamicDestinations,
+                        tableDestination,
+                        context.element().getKey());
                     TableReference tableReference = tableDestination.getTableReference();
                     if (Strings.isNullOrEmpty(tableReference.getProjectId())) {
                       tableReference.setProjectId(
@@ -101,6 +117,18 @@ public class CreateTables<DestinationT>
                     }
                     TableSchema tableSchema =
                         dynamicDestinations.getSchema(context.element().getKey());
+                    if (createDisposition != CreateDisposition.CREATE_NEVER) {
+                      checkArgument(
+                          tableSchema != null,
+                          "Unless create disposition is %s, a schema must be specified, i.e. "
+                              + "DynamicDestinations.getSchema() may not return null. "
+                              + "However, create disposition is %s, and "
+                              + " %s returned null for destination %s",
+                          CreateDisposition.CREATE_NEVER,
+                          createDisposition,
+                          dynamicDestinations,
+                          context.element().getKey());
+                    }
                     BigQueryOptions options =
                         context.getPipelineOptions().as(BigQueryOptions.class);
                     possibleCreateTable(options, tableDestination, tableSchema);
@@ -113,9 +141,7 @@ public class CreateTables<DestinationT>
   private void possibleCreateTable(
       BigQueryOptions options, TableDestination tableDestination, TableSchema tableSchema)
       throws InterruptedException, IOException {
-    String tableSpec = tableDestination.getTableSpec();
-    TableReference tableReference = tableDestination.getTableReference();
-    String tableDescription = tableDestination.getTableDescription();
+    String tableSpec = BigQueryHelpers.stripPartitionDecorator(tableDestination.getTableSpec());
     if (createDisposition != createDisposition.CREATE_NEVER && !createdTables.contains(tableSpec)) {
       synchronized (createdTables) {
         // Another thread may have succeeded in creating the table in the meanwhile, so
@@ -123,12 +149,19 @@ public class CreateTables<DestinationT>
         // every thread from attempting a create and overwhelming our BigQuery quota.
         DatasetService datasetService = bqServices.getDatasetService(options);
         if (!createdTables.contains(tableSpec)) {
+          TableReference tableReference = tableDestination.getTableReference();
+          String tableDescription = tableDestination.getTableDescription();
+          tableReference.setTableId(
+              BigQueryHelpers.stripPartitionDecorator(tableReference.getTableId()));
           if (datasetService.getTable(tableReference) == null) {
-            datasetService.createTable(
-                new Table()
-                    .setTableReference(tableReference)
-                    .setSchema(tableSchema)
-                    .setDescription(tableDescription));
+            Table table = new Table()
+                .setTableReference(tableReference)
+                .setSchema(tableSchema)
+                .setDescription(tableDescription);
+            if (tableDestination.getTimePartitioning() != null) {
+              table.setTimePartitioning(tableDestination.getTimePartitioning());
+            }
+            datasetService.createTable(table);
           }
           createdTables.add(tableSpec);
         }

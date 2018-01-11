@@ -24,7 +24,7 @@
  * from existing storage:
  * <pre>{@code
  * PCollection<TableRow> inputData = pipeline.apply(
- *     BigQueryIO.read().from("clouddataflow-readonly:samples.weather_stations"));
+ *     BigQueryIO.readTableRows().from("clouddataflow-readonly:samples.weather_stations"));
  * }</pre>
  * and {@code Write} transforms that persist PCollections to external storage:
  * <pre> {@code
@@ -32,4 +32,8 @@
  * numbers.apply(TextIO.write().to("gs://my_bucket/path/to/numbers"));
  * } </pre>
  */
+@DefaultAnnotation(NonNull.class)
 package org.apache.beam.sdk.io;
+
+import edu.umd.cs.findbugs.annotations.DefaultAnnotation;
+import edu.umd.cs.findbugs.annotations.NonNull;

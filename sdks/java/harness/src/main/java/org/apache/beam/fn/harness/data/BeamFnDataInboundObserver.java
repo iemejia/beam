@@ -20,20 +20,20 @@ package org.apache.beam.fn.harness.data;
 import java.io.InputStream;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
-import org.apache.beam.fn.harness.fn.ThrowingConsumer;
-import org.apache.beam.fn.v1.BeamFnApi;
+import org.apache.beam.model.fnexecution.v1.BeamFnApi;
 import org.apache.beam.sdk.coders.Coder;
+import org.apache.beam.sdk.fn.data.FnDataReceiver;
 import org.apache.beam.sdk.util.WindowedValue;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Decodes individually consumed {@link org.apache.beam.fn.v1.BeamFnApi.Elements.Data} with the
+ * Decodes individually consumed {@link BeamFnApi.Elements.Data} with the
  * provided {@link Coder} passing the individual decoded elements to the provided consumer.
  */
 public class BeamFnDataInboundObserver<T> implements Consumer<BeamFnApi.Elements.Data> {
   private static final Logger LOG = LoggerFactory.getLogger(BeamFnDataInboundObserver.class);
-  private final ThrowingConsumer<WindowedValue<T>> consumer;
+  private final FnDataReceiver<WindowedValue<T>> consumer;
   private final Coder<WindowedValue<T>> coder;
   private final CompletableFuture<Void> readFuture;
   private long byteCounter;
@@ -41,7 +41,7 @@ public class BeamFnDataInboundObserver<T> implements Consumer<BeamFnApi.Elements
 
   public BeamFnDataInboundObserver(
       Coder<WindowedValue<T>> coder,
-      ThrowingConsumer<WindowedValue<T>> consumer,
+      FnDataReceiver<WindowedValue<T>> consumer,
       CompletableFuture<Void> readFuture) {
     this.coder = coder;
     this.consumer = consumer;

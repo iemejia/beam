@@ -16,6 +16,7 @@
 #
 
 """Tests common to all coder implementations."""
+from __future__ import absolute_import
 
 import logging
 import math
@@ -23,16 +24,16 @@ import unittest
 
 import dill
 
-from apache_beam.transforms.window import GlobalWindow
-from apache_beam.utils.timestamp import MIN_TIMESTAMP
-import observable
+from apache_beam.coders import proto2_coder_test_messages_pb2 as test_message
+from apache_beam.coders import coders
 from apache_beam.runners import pipeline_context
 from apache_beam.transforms import window
+from apache_beam.transforms.window import GlobalWindow
 from apache_beam.utils import timestamp
 from apache_beam.utils import windowed_value
+from apache_beam.utils.timestamp import MIN_TIMESTAMP
 
-from apache_beam.coders import coders
-from apache_beam.coders import proto2_coder_test_messages_pb2 as test_message
+from . import observable
 
 
 # Defined out of line for picklability.
@@ -120,7 +121,7 @@ class CodersTest(unittest.TestCase):
                      (1, dict()), ('a', [dict()]))
 
   def test_dill_coder(self):
-    cell_value = (lambda x: lambda: x)(0).func_closure[0]
+    cell_value = (lambda x: lambda: x)(0).__closure__[0]
     self.check_coder(coders.DillCoder(), 'a', 1, cell_value)
     self.check_coder(
         coders.TupleCoder((coders.VarIntCoder(), coders.DillCoder())),

@@ -20,7 +20,6 @@ package org.apache.beam.fn.harness;
 
 import static com.google.common.collect.Iterables.getOnlyElement;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.auto.service.AutoService;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Multimap;
@@ -29,30 +28,31 @@ import java.util.Map;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 import org.apache.beam.fn.harness.data.BeamFnDataClient;
-import org.apache.beam.fn.harness.fn.CloseableThrowingConsumer;
-import org.apache.beam.fn.harness.fn.ThrowingConsumer;
 import org.apache.beam.fn.harness.fn.ThrowingRunnable;
 import org.apache.beam.fn.harness.state.BeamFnStateClient;
-import org.apache.beam.fn.v1.BeamFnApi;
+import org.apache.beam.model.fnexecution.v1.BeamFnApi;
+import org.apache.beam.model.pipeline.v1.Endpoints;
+import org.apache.beam.model.pipeline.v1.RunnerApi;
+import org.apache.beam.model.pipeline.v1.RunnerApi.PCollection;
+import org.apache.beam.model.pipeline.v1.RunnerApi.PTransform;
 import org.apache.beam.runners.core.construction.CoderTranslation;
 import org.apache.beam.runners.core.construction.RehydratedComponents;
 import org.apache.beam.sdk.coders.Coder;
-import org.apache.beam.sdk.common.runner.v1.RunnerApi;
+import org.apache.beam.sdk.fn.data.CloseableFnDataReceiver;
+import org.apache.beam.sdk.fn.data.FnDataReceiver;
+import org.apache.beam.sdk.fn.data.LogicalEndpoint;
+import org.apache.beam.sdk.fn.data.RemoteGrpcPortWrite;
 import org.apache.beam.sdk.options.PipelineOptions;
 import org.apache.beam.sdk.util.WindowedValue;
-import org.apache.beam.sdk.values.KV;
 
 /**
  * Registers as a consumer with the Beam Fn Data Api. Consumes elements and encodes them for
  * transmission.
  *
- * <p>Can be re-used serially across {@link org.apache.beam.fn.v1.BeamFnApi.ProcessBundleRequest}s.
+ * <p>Can be re-used serially across {@link BeamFnApi.ProcessBundleRequest}s.
  * For each request, call {@link #registerForOutput()} to start and call {@link #close()} to finish.
  */
 public class BeamFnDataWriteRunner<InputT> {
-
-  private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
-  private static final String URN = "urn:org.apache.beam:sink:runner:0.1";
 
   /** A registrar which provides a factory to handle writing to the Fn Api Data Plane. */
   @AutoService(PTransformRunnerFactory.Registrar.class)
@@ -61,7 +61,7 @@ public class BeamFnDataWriteRunner<InputT> {
 
     @Override
     public Map<String, PTransformRunnerFactory> getPTransformRunnerFactories() {
-      return ImmutableMap.of(URN, new Factory());
+      return ImmutableMap.of(RemoteGrpcPortWrite.URN, new Factory());
     }
   }
 
@@ -75,11 +75,12 @@ public class BeamFnDataWriteRunner<InputT> {
         BeamFnDataClient beamFnDataClient,
         BeamFnStateClient beamFnStateClient,
         String pTransformId,
-        RunnerApi.PTransform pTransform,
+        PTransform pTransform,
         Supplier<String> processBundleInstructionId,
-        Map<String, RunnerApi.PCollection> pCollections,
+        Map<String, PCollection> pCollections,
         Map<String, RunnerApi.Coder> coders,
-        Multimap<String, ThrowingConsumer<WindowedValue<?>>> pCollectionIdsToConsumers,
+        Map<String, RunnerApi.WindowingStrategy> windowingStrategies,
+        Multimap<String, FnDataReceiver<WindowedValue<?>>> pCollectionIdsToConsumers,
         Consumer<ThrowingRunnable> addStartFunction,
         Consumer<ThrowingRunnable> addFinishFunction) throws IOException {
       BeamFnApi.Target target = BeamFnApi.Target.newBuilder()
@@ -90,7 +91,7 @@ public class BeamFnDataWriteRunner<InputT> {
           pCollections.get(getOnlyElement(pTransform.getInputsMap().values())).getCoderId());
       BeamFnDataWriteRunner<InputT> runner =
           new BeamFnDataWriteRunner<>(
-              pTransform.getSpec(),
+              pTransform,
               processBundleInstructionId,
               target,
               coderSpec,
@@ -99,23 +100,23 @@ public class BeamFnDataWriteRunner<InputT> {
       addStartFunction.accept(runner::registerForOutput);
       pCollectionIdsToConsumers.put(
           getOnlyElement(pTransform.getInputsMap().values()),
-          (ThrowingConsumer)
-              (ThrowingConsumer<WindowedValue<InputT>>) runner::consume);
+          (FnDataReceiver)
+              (FnDataReceiver<WindowedValue<InputT>>) runner::consume);
       addFinishFunction.accept(runner::close);
       return runner;
     }
   }
 
-  private final BeamFnApi.ApiServiceDescriptor apiServiceDescriptor;
+  private final Endpoints.ApiServiceDescriptor apiServiceDescriptor;
   private final BeamFnApi.Target outputTarget;
   private final Coder<WindowedValue<InputT>> coder;
   private final BeamFnDataClient beamFnDataClientFactory;
   private final Supplier<String> processBundleInstructionIdSupplier;
 
-  private CloseableThrowingConsumer<WindowedValue<InputT>> consumer;
+  private CloseableFnDataReceiver<WindowedValue<InputT>> consumer;
 
   BeamFnDataWriteRunner(
-      RunnerApi.FunctionSpec functionSpec,
+      RunnerApi.PTransform remoteWriteNode,
       Supplier<String> processBundleInstructionIdSupplier,
       BeamFnApi.Target outputTarget,
       RunnerApi.Coder coderSpec,
@@ -123,7 +124,7 @@ public class BeamFnDataWriteRunner<InputT> {
       BeamFnDataClient beamFnDataClientFactory)
           throws IOException {
     this.apiServiceDescriptor =
-        BeamFnApi.RemoteGrpcPort.parseFrom(functionSpec.getPayload()).getApiServiceDescriptor();
+        RemoteGrpcPortWrite.fromPTransform(remoteWriteNode).getPort().getApiServiceDescriptor();
     this.beamFnDataClientFactory = beamFnDataClientFactory;
     this.processBundleInstructionIdSupplier = processBundleInstructionIdSupplier;
     this.outputTarget = outputTarget;
@@ -139,9 +140,9 @@ public class BeamFnDataWriteRunner<InputT> {
   }
 
   public void registerForOutput() {
-    consumer = beamFnDataClientFactory.forOutboundConsumer(
+    consumer = beamFnDataClientFactory.send(
         apiServiceDescriptor,
-        KV.of(processBundleInstructionIdSupplier.get(), outputTarget),
+        LogicalEndpoint.of(processBundleInstructionIdSupplier.get(), outputTarget),
         coder);
   }
 

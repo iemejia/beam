@@ -30,6 +30,8 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import javax.annotation.CheckForNull;
+import javax.annotation.Nullable;
 import org.apache.beam.sdk.annotations.Experimental;
 import org.apache.beam.sdk.options.PipelineOptions;
 import org.apache.beam.sdk.options.PipelineOptionsFactory;
@@ -45,7 +47,6 @@ import org.apache.beam.sdk.transforms.windowing.GlobalWindow;
 import org.apache.beam.sdk.transforms.windowing.PaneInfo;
 import org.apache.beam.sdk.util.SerializableUtils;
 import org.apache.beam.sdk.util.UserCodeException;
-import org.apache.beam.sdk.util.WindowedValue;
 import org.apache.beam.sdk.values.PCollectionView;
 import org.apache.beam.sdk.values.TimestampedValue;
 import org.apache.beam.sdk.values.TupleTag;
@@ -514,17 +515,17 @@ public class DoFnTester<InputT, OutputT> implements AutoCloseable {
 
   private <T> List<ValueInSingleWindow<T>> getImmutableOutput(TupleTag<T> tag) {
     @SuppressWarnings({"unchecked", "rawtypes"})
-    List<ValueInSingleWindow<T>> elems = (List) outputs.get(tag);
+    List<ValueInSingleWindow<T>> elems = (List) getOutputs().get(tag);
     return ImmutableList.copyOf(
         MoreObjects.firstNonNull(elems, Collections.<ValueInSingleWindow<T>>emptyList()));
   }
 
   @SuppressWarnings({"unchecked", "rawtypes"})
   public <T> List<ValueInSingleWindow<T>> getMutableOutput(TupleTag<T> tag) {
-    List<ValueInSingleWindow<T>> outputList = (List) outputs.get(tag);
+    List<ValueInSingleWindow<T>> outputList = (List) getOutputs().get(tag);
     if (outputList == null) {
       outputList = new ArrayList<>();
-      outputs.put(tag, (List) outputList);
+      getOutputs().put(tag, (List) outputList);
     }
     return outputList;
   }
@@ -600,7 +601,24 @@ public class DoFnTester<InputT, OutputT> implements AutoCloseable {
           return windowValue;
         }
       }
-      return view.getViewFn().apply(Collections.<WindowedValue<?>>emptyList());
+      // Fallback to returning the default materialization if no data was supplied.
+      // This is really to support singleton views with default values.
+
+      // TODO: Update this to supply a materialization dependent on actual URN of materialization.
+      // Currently the SDK only supports the multimap materialization and it expects a
+      // mapping function.
+      checkState(Materializations.MULTIMAP_MATERIALIZATION_URN.equals(
+          view.getViewFn().getMaterialization().getUrn()),
+          "Only materializations of type %s supported, received %s",
+          Materializations.MULTIMAP_MATERIALIZATION_URN,
+          view.getViewFn().getMaterialization().getUrn());
+      return ((ViewFn<Materializations.MultimapView, T>) view.getViewFn()).apply(
+          new Materializations.MultimapView<Object, Object>() {
+            @Override
+            public Iterable<Object> get(Object o) {
+              return Collections.emptyList();
+            }
+          });
     }
 
     @Override
@@ -688,11 +706,12 @@ public class DoFnTester<InputT, OutputT> implements AutoCloseable {
   private TupleTag<OutputT> mainOutputTag = new TupleTag<>();
 
   /** The original DoFn under test, if started. */
-  private DoFn<InputT, OutputT> fn;
-  private DoFnInvoker<InputT, OutputT> fnInvoker;
+  @Nullable private DoFn<InputT, OutputT> fn;
 
-  /** The outputs from the {@link DoFn} under test. */
-  private Map<TupleTag<?>, List<ValueInSingleWindow<?>>> outputs;
+  @Nullable private DoFnInvoker<InputT, OutputT> fnInvoker;
+
+  /** The outputs from the {@link DoFn} under test. Access via {@link #getOutputs()}. */
+  @CheckForNull private Map<TupleTag<?>, List<ValueInSingleWindow<?>>> outputs;
 
   /** The state of processing of the {@link DoFn} under test. */
   private State state = State.UNINITIALIZED;
@@ -704,12 +723,14 @@ public class DoFnTester<InputT, OutputT> implements AutoCloseable {
       param.match(
           new DoFnSignature.Parameter.Cases.WithDefault<Void>() {
             @Override
+            @Nullable
             public Void dispatch(DoFnSignature.Parameter.ProcessContextParameter p) {
               // ProcessContext parameter is obviously supported.
               return null;
             }
 
             @Override
+            @Nullable
             public Void dispatch(DoFnSignature.Parameter.WindowParameter p) {
               // We also support the BoundedWindow parameter.
               return null;
@@ -738,6 +759,12 @@ public class DoFnTester<InputT, OutputT> implements AutoCloseable {
     }
     fnInvoker = DoFnInvokers.invokerFor(fn);
     fnInvoker.invokeSetup();
-    outputs = new HashMap<>();
+  }
+
+  private Map getOutputs() {
+    if (outputs == null) {
+      outputs = new HashMap<>();
+    }
+    return outputs;
   }
 }

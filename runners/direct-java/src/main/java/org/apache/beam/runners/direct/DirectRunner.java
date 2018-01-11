@@ -29,6 +29,7 @@ import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.apache.beam.model.pipeline.v1.RunnerApi;
 import org.apache.beam.runners.core.SplittableParDoViaKeyedWorkItems;
 import org.apache.beam.runners.core.construction.PTransformMatchers;
 import org.apache.beam.runners.core.construction.PTransformTranslation;
@@ -161,8 +162,8 @@ public class DirectRunner extends PipelineRunner<DirectPipelineResult> {
   public DirectPipelineResult run(Pipeline originalPipeline) {
     Pipeline pipeline;
     try {
-      pipeline = PipelineTranslation.fromProto(
-          PipelineTranslation.toProto(originalPipeline));
+      RunnerApi.Pipeline protoPipeline = PipelineTranslation.toProto(originalPipeline);
+      pipeline = PipelineTranslation.fromProto(protoPipeline);
     } catch (IOException exception) {
       throw new RuntimeException("Error preparing pipeline for direct execution.", exception);
     }
@@ -187,16 +188,14 @@ public class DirectRunner extends PipelineRunner<DirectPipelineResult> {
             graph,
             keyedPValueVisitor.getKeyedPValues());
 
-    RootProviderRegistry rootInputProvider = RootProviderRegistry.defaultRegistry(context);
     TransformEvaluatorRegistry registry = TransformEvaluatorRegistry.defaultRegistry(context);
     PipelineExecutor executor =
         ExecutorServiceParallelExecutor.create(
-            options.getTargetParallelism(), graph,
-            rootInputProvider,
+            options.getTargetParallelism(),
             registry,
             Enforcement.defaultModelEnforcements(enabledEnforcements),
             context);
-    executor.start(graph.getRootTransforms());
+    executor.start(graph, RootProviderRegistry.defaultRegistry(context));
 
     DirectPipelineResult result = new DirectPipelineResult(executor, context);
     if (options.isBlockOnRun()) {

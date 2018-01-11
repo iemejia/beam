@@ -36,6 +36,7 @@ import com.fasterxml.jackson.databind.DeserializationContext;
 import com.fasterxml.jackson.databind.JsonDeserializer;
 import com.fasterxml.jackson.databind.JsonSerializer;
 import com.fasterxml.jackson.databind.Module;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializerProvider;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
@@ -58,6 +59,7 @@ import org.apache.beam.sdk.runners.PipelineRunnerRegistrar;
 import org.apache.beam.sdk.testing.CrashingRunner;
 import org.apache.beam.sdk.testing.ExpectedLogs;
 import org.apache.beam.sdk.testing.RestoreSystemProperties;
+import org.apache.beam.sdk.util.common.ReflectHelpers;
 import org.hamcrest.Matchers;
 import org.junit.Rule;
 import org.junit.Test;
@@ -120,6 +122,19 @@ public class PipelineOptionsFactoryTest {
     TestPipelineOptions options = PipelineOptionsFactory.as(TestPipelineOptions.class);
     assertEquals(PipelineOptionsFactoryTest.class.getSimpleName(),
         options.as(ApplicationNameOptions.class).getAppName());
+  }
+
+  @Test
+  public void testOptionsIdIsSet() throws Exception {
+    ObjectMapper mapper = new ObjectMapper().registerModules(
+        ObjectMapper.findModules(ReflectHelpers.findClassLoader()));
+    PipelineOptions options = PipelineOptionsFactory.create();
+    // We purposely serialize/deserialize to get another instance. This allows to test if the
+    // default has been set or not.
+    PipelineOptions clone =
+        mapper.readValue(mapper.writeValueAsString(options), PipelineOptions.class);
+    // It is important that we don't call getOptionsId() before we have created the clone.
+    assertEquals(options.getOptionsId(), clone.getOptionsId());
   }
 
   @Test
@@ -1629,9 +1644,47 @@ public class PipelineOptionsFactoryTest {
         containsString("The pipeline runner that will be used to execute the pipeline."));
   }
 
+  interface PipelineOptionsInheritedInvalid extends Invalid1,
+          InvalidPipelineOptions2, PipelineOptions {
+    String getFoo();
+    void setFoo(String value);
+  }
+
+  interface InvalidPipelineOptions1 {
+    String getBar();
+    void setBar(String value);
+  }
+
+  interface Invalid1 extends InvalidPipelineOptions1 {
+    String getBar();
+    void setBar(String value);
+  }
+
+  interface InvalidPipelineOptions2 {
+    String getBar();
+    void setBar(String value);
+  }
+
+  @Test
+  public void testAllFromPipelineOptions() {
+    expectedException.expect(IllegalArgumentException.class);
+    expectedException.expectMessage(
+       "All inherited interfaces of [org.apache.beam.sdk.options.PipelineOptionsFactoryTest"
+       + "$PipelineOptionsInheritedInvalid] should inherit from the PipelineOptions interface. "
+       + "The following inherited interfaces do not:\n"
+       + " - org.apache.beam.sdk.options.PipelineOptionsFactoryTest"
+       + "$InvalidPipelineOptions1\n"
+       + " - org.apache.beam.sdk.options.PipelineOptionsFactoryTest"
+       + "$InvalidPipelineOptions2");
+
+    PipelineOptionsInheritedInvalid options = PipelineOptionsFactory.as(
+            PipelineOptionsInheritedInvalid.class);
+  }
+
   private String emptyStringErrorMessage() {
     return emptyStringErrorMessage(null);
   }
+
   private String emptyStringErrorMessage(String type) {
     String msg = "Empty argument value is only allowed for String, String Array, "
         + "Collections of Strings or any of these types in a parameterized ValueProvider";
@@ -1736,4 +1789,5 @@ public class PipelineOptionsFactoryTest {
       jsonGenerator.writeString(jacksonIncompatible.value);
     }
   }
+
 }

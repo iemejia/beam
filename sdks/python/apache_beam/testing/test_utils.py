@@ -22,13 +22,53 @@ For internal use only; no backwards-compatibility guarantees.
 
 import hashlib
 import imp
-from mock import Mock, patch
+import os
+import shutil
+import tempfile
+
+from mock import Mock
+from mock import patch
 
 from apache_beam.io.filesystems import FileSystems
 from apache_beam.utils import retry
 
-
 DEFAULT_HASHING_ALG = 'sha1'
+
+
+class TempDir(object):
+  """Context Manager to create and clean-up a temporary directory."""
+
+  def __init__(self):
+    self._tempdir = tempfile.mkdtemp()
+
+  def __enter__(self):
+    return self
+
+  def __exit__(self, *args):
+    if os.path.exists(self._tempdir):
+      shutil.rmtree(self._tempdir)
+
+  def get_path(self):
+    """Returns the path to the temporary directory."""
+    return self._tempdir
+
+  def create_temp_file(self, suffix='', lines=None):
+    """Creates a temporary file in the temporary directory.
+
+    Args:
+      suffix (str): The filename suffix of the temporary file (e.g. '.txt')
+      lines (List[str]): A list of lines that will be written to the temporary
+        file.
+    Returns:
+      The name of the temporary file created.
+    """
+    with tempfile.NamedTemporaryFile(
+        delete=False, dir=self._tempdir, suffix=suffix) as f:
+      if lines:
+        for line in lines:
+          f.write(line)
+
+      return f.name
 
 
 def compute_hash(content, hashing_alg=DEFAULT_HASHING_ALG):

@@ -34,6 +34,7 @@ import static org.hamcrest.Matchers.not;
 import static org.hamcrest.collection.IsIterableContainingInAnyOrder.containsInAnyOrder;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertThat;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
@@ -52,6 +53,7 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Set;
 import org.apache.beam.sdk.coders.AtomicCoder;
 import org.apache.beam.sdk.coders.Coder;
@@ -66,7 +68,9 @@ import org.apache.beam.sdk.options.Default;
 import org.apache.beam.sdk.options.PipelineOptions;
 import org.apache.beam.sdk.state.BagState;
 import org.apache.beam.sdk.state.CombiningState;
+import org.apache.beam.sdk.state.GroupingState;
 import org.apache.beam.sdk.state.MapState;
+import org.apache.beam.sdk.state.ReadableState;
 import org.apache.beam.sdk.state.SetState;
 import org.apache.beam.sdk.state.StateSpec;
 import org.apache.beam.sdk.state.StateSpecs;
@@ -1983,9 +1987,16 @@ public class ParDoTest implements Serializable {
           @ProcessElement
           public void processElement(
               ProcessContext c, @StateId(stateId) BagState<Integer> state) {
-            Iterable<Integer> currentValue = state.read();
+            ReadableState<Boolean> isEmpty = state.isEmpty();
             state.add(c.element().getValue());
-            if (Iterables.size(state.read()) >= 4) {
+            assertFalse(isEmpty.read());
+            Iterable<Integer> currentValue = state.read();
+            if (Iterables.size(currentValue) >= 4) {
+              // Make sure that the cached Iterable doesn't change when new elements are added.
+              state.add(-1);
+              assertEquals(4, Iterables.size(currentValue));
+              assertEquals(5, Iterables.size(state.read()));
+
               List<Integer> sorted = Lists.newArrayList(currentValue);
               Collections.sort(sorted);
               c.output(sorted);
@@ -2020,9 +2031,9 @@ public class ParDoTest implements Serializable {
           @ProcessElement
           public void processElement(
               ProcessContext c, @StateId(stateId) BagState<MyInteger> state) {
-            Iterable<MyInteger> currentValue = state.read();
             state.add(new MyInteger(c.element().getValue()));
-            if (Iterables.size(state.read()) >= 4) {
+            Iterable<MyInteger> currentValue = state.read();
+            if (Iterables.size(currentValue) >= 4) {
               List<MyInteger> sorted = Lists.newArrayList(currentValue);
               Collections.sort(sorted);
               c.output(sorted);
@@ -2058,9 +2069,9 @@ public class ParDoTest implements Serializable {
           @ProcessElement
           public void processElement(
               ProcessContext c, @StateId(stateId) BagState<MyInteger> state) {
-            Iterable<MyInteger> currentValue = state.read();
             state.add(new MyInteger(c.element().getValue()));
-            if (Iterables.size(state.read()) >= 4) {
+            Iterable<MyInteger> currentValue = state.read();
+            if (Iterables.size(currentValue) >= 4) {
               List<MyInteger> sorted = Lists.newArrayList(currentValue);
               Collections.sort(sorted);
               c.output(sorted);
@@ -2102,10 +2113,18 @@ public class ParDoTest implements Serializable {
               @StateId(stateId) SetState<Integer> state,
               @StateId(countStateId) CombiningState<Integer, int[], Integer>
                   count) {
+            ReadableState<Boolean> isEmpty = state.isEmpty();
             state.add(c.element().getValue());
+            assertFalse(isEmpty.read());
             count.add(1);
             if (count.read() >= 4) {
-              Set<Integer> set = Sets.newHashSet(state.read());
+              // Make sure that the cached Iterable doesn't change when new elements are added.
+              Iterable<Integer> ints = state.read();
+              state.add(-1);
+              assertEquals(3, Iterables.size(ints));
+              assertEquals(4, Iterables.size(state.read()));
+
+              Set<Integer> set = Sets.newHashSet(ints);
               c.output(set);
             }
           }
@@ -2231,10 +2250,18 @@ public class ParDoTest implements Serializable {
               @StateId(countStateId) CombiningState<Integer, int[], Integer>
                   count) {
             KV<String, Integer> value = c.element().getValue();
+            ReadableState<Iterable<Entry<String, Integer>>> entriesView = state.entries();
             state.put(value.getKey(), value.getValue());
             count.add(1);
             if (count.read() >= 4) {
               Iterable<Map.Entry<String, Integer>> iterate = state.entries().read();
+              // Make sure that the cached Iterable doesn't change when new elements are added, but
+              // that cached ReadableState views of the state do change.
+              state.put("BadKey", -1);
+              assertEquals(3, Iterables.size(iterate));
+              assertEquals(4, Iterables.size(entriesView.read()));
+              assertEquals(4, Iterables.size(state.entries().read()));
+
               for (Map.Entry<String, Integer> entry : iterate) {
                 c.output(KV.of(entry.getKey(), entry.getValue()));
               }
@@ -2508,6 +2535,40 @@ public class ParDoTest implements Serializable {
 
   @Test
   @Category({ValidatesRunner.class, UsesStatefulParDo.class})
+  public void testCombiningStateParameterSuperclass() {
+    final String stateId = "foo";
+
+    DoFn<KV<Integer, Integer>, String> fn =
+        new DoFn<KV<Integer, Integer>, String>() {
+          private static final int EXPECTED_SUM = 8;
+
+          @StateId(stateId)
+          private final StateSpec<CombiningState<Integer, int[], Integer>> state =
+              StateSpecs.combining(Sum.ofIntegers());
+
+          @ProcessElement
+          public void processElement(ProcessContext c,
+              @StateId(stateId) GroupingState<Integer, Integer> state) {
+            state.add(c.element().getValue());
+            Integer currentValue = state.read();
+            if (currentValue == EXPECTED_SUM) {
+              c.output("right on");
+            }
+          }
+        };
+
+    PCollection<String> output =
+        pipeline
+            .apply(Create.of(KV.of(123, 4), KV.of(123, 7), KV.of(123, -3)))
+            .apply(ParDo.of(fn));
+
+    // There should only be one moment at which the sum is exactly 8
+    PAssert.that(output).containsInAnyOrder("right on");
+    pipeline.run();
+  }
+
+  @Test
+  @Category({ValidatesRunner.class, UsesStatefulParDo.class})
   public void testBagStateSideInput() {
 
     final PCollectionView<List<Integer>> listView =
@@ -2525,9 +2586,9 @@ public class ParDoTest implements Serializable {
           @ProcessElement
           public void processElement(
               ProcessContext c, @StateId(stateId) BagState<Integer> state) {
-            Iterable<Integer> currentValue = state.read();
             state.add(c.element().getValue());
-            if (Iterables.size(state.read()) >= 4) {
+            Iterable<Integer> currentValue = state.read();
+            if (Iterables.size(currentValue) >= 4) {
               List<Integer> sorted = Lists.newArrayList(currentValue);
               Collections.sort(sorted);
               c.output(sorted);

@@ -21,6 +21,7 @@
 import unittest
 
 import mock
+
 from apache_beam.io.filesystem import BeamIOError
 from apache_beam.io.filesystem import FileMetadata
 
@@ -124,10 +125,9 @@ class GCSFileSystemTest(unittest.TestCase):
     expected_results = {'gs://bucket/': exception}
 
     file_system = gcsfilesystem.GCSFileSystem()
-    with self.assertRaises(BeamIOError) as error:
+    with self.assertRaisesRegexp(BeamIOError,
+                                 r'^Match operation failed') as error:
       file_system.match(['gs://bucket/'])
-    self.assertTrue(
-        error.exception.message.startswith('Match operation failed'))
     self.assertEqual(error.exception.exception_details, expected_results)
     gcsio_mock.size_of_files_in_glob.assert_called_once_with(
         'gs://bucket/*', None)
@@ -206,10 +206,9 @@ class GCSFileSystemTest(unittest.TestCase):
 
     # Issue batch copy.
     file_system = gcsfilesystem.GCSFileSystem()
-    with self.assertRaises(BeamIOError) as error:
+    with self.assertRaisesRegexp(BeamIOError,
+                                 r'^Copy operation failed') as error:
       file_system.copy(sources, destinations)
-    self.assertTrue(
-        error.exception.message.startswith('Copy operation failed'))
     self.assertEqual(error.exception.exception_details, expected_results)
 
     gcsio_mock.copy.assert_called_once_with(
@@ -299,10 +298,9 @@ class GCSFileSystemTest(unittest.TestCase):
 
     # Issue batch rename.
     file_system = gcsfilesystem.GCSFileSystem()
-    with self.assertRaises(BeamIOError) as error:
+    with self.assertRaisesRegexp(BeamIOError,
+                                 r'^Rename operation failed') as error:
       file_system.rename(sources, destinations)
-    self.assertTrue(
-        error.exception.message.startswith('Rename operation failed'))
     self.assertEqual(error.exception.exception_details, expected_results)
 
     gcsio_mock.copy_batch.assert_called_once_with([
@@ -348,9 +346,8 @@ class GCSFileSystemTest(unittest.TestCase):
 
     # Issue batch delete.
     file_system = gcsfilesystem.GCSFileSystem()
-    with self.assertRaises(BeamIOError) as error:
+    with self.assertRaisesRegexp(BeamIOError,
+                                 r'^Delete operation failed') as error:
       file_system.delete(files)
-    self.assertTrue(
-        error.exception.message.startswith('Delete operation failed'))
     self.assertEqual(error.exception.exception_details, expected_results)
     gcsio_mock.delete_batch.assert_called()

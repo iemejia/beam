@@ -20,6 +20,7 @@ package org.apache.beam.sdk.io;
 import java.nio.channels.Channels;
 import java.nio.channels.WritableByteChannel;
 import java.util.Map;
+import javax.annotation.Nullable;
 import org.apache.avro.Schema;
 import org.apache.avro.file.CodecFactory;
 import org.apache.avro.file.DataFileWriter;
@@ -40,7 +41,7 @@ class AvroSink<UserT, DestinationT, OutputT> extends FileBasedSink<UserT, Destin
       DynamicAvroDestinations<UserT, DestinationT, OutputT> dynamicDestinations,
       boolean genericRecords) {
     // Avro handle compression internally using the codec.
-    super(outputPrefix, dynamicDestinations, CompressionType.UNCOMPRESSED);
+    super(outputPrefix, dynamicDestinations, Compression.UNCOMPRESSED);
     this.dynamicDestinations = dynamicDestinations;
     this.genericRecords = genericRecords;
   }
@@ -75,7 +76,10 @@ class AvroSink<UserT, DestinationT, OutputT> extends FileBasedSink<UserT, Destin
 
   /** A {@link Writer Writer} for Avro files. */
   private static class AvroWriter<DestinationT, OutputT> extends Writer<DestinationT, OutputT> {
-    private DataFileWriter<OutputT> dataFileWriter;
+
+    // Initialized in prepareWrite
+    @Nullable private DataFileWriter<OutputT> dataFileWriter;
+
     private final DynamicAvroDestinations<?, DestinationT, ?> dynamicDestinations;
     private final boolean genericRecords;
 

@@ -25,6 +25,7 @@ import java.io.IOException;
 import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Objects;
+import javax.annotation.Nullable;
 import org.apache.beam.sdk.coders.AvroCoder;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.coders.DefaultCoder;
@@ -361,9 +362,6 @@ public class CountingSource {
     }
 
     @Override
-    public void validate() {}
-
-    @Override
     public Coder<Long> getOutputCoder() {
       return VarLongCoder.of();
     }
@@ -393,8 +391,12 @@ public class CountingSource {
   private static class UnboundedCountingReader extends UnboundedReader<Long> {
     private UnboundedCountingSource source;
     private long current;
-    private Instant currentTimestamp;
-    private Instant firstStarted;
+
+    // Initialized on first advance()
+    @Nullable private Instant currentTimestamp;
+
+    // Initialized in start()
+    @Nullable private Instant firstStarted;
 
     private final Counter elementsRead = SourceMetrics.elementsRead();
 

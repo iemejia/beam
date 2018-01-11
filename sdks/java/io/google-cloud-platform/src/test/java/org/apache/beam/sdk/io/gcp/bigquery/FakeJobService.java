@@ -19,6 +19,7 @@
 package org.apache.beam.sdk.io.gcp.bigquery;
 
 import static com.google.common.base.Preconditions.checkArgument;
+import static com.google.common.base.Preconditions.checkNotNull;
 
 import com.google.api.client.json.JsonFactory;
 import com.google.api.client.util.BackOff;
@@ -39,6 +40,7 @@ import com.google.api.services.bigquery.model.Table;
 import com.google.api.services.bigquery.model.TableReference;
 import com.google.api.services.bigquery.model.TableRow;
 import com.google.api.services.bigquery.model.TableSchema;
+import com.google.api.services.bigquery.model.TimePartitioning;
 import com.google.common.collect.HashBasedTable;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
@@ -61,7 +63,6 @@ import org.apache.avro.generic.GenericRecordBuilder;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.coders.Coder.Context;
 import org.apache.beam.sdk.io.FileSystems;
-import org.apache.beam.sdk.io.fs.MoveOptions;
 import org.apache.beam.sdk.io.fs.ResourceId;
 import org.apache.beam.sdk.io.gcp.bigquery.BigQueryIO.Write.CreateDisposition;
 import org.apache.beam.sdk.io.gcp.bigquery.BigQueryIO.Write.WriteDisposition;
@@ -92,17 +93,23 @@ class FakeJobService implements JobService, Serializable {
     }
   }
 
-  private static final com.google.common.collect.Table<String, String, JobInfo> allJobs =
-      HashBasedTable.create();
-  private static int numExtractJobCalls = 0;
+  private static com.google.common.collect.Table<String, String, JobInfo> allJobs;
+  private static int numExtractJobCalls;
 
-  private static final com.google.common.collect.Table<String, String, List<ResourceId>>
-      filesForLoadJobs = HashBasedTable.create();
-  private static final com.google.common.collect.Table<String, String, JobStatistics>
-      dryRunQueryResults = HashBasedTable.create();
+  private static com.google.common.collect.Table<String, String, List<ResourceId>>
+      filesForLoadJobs;
+  private static com.google.common.collect.Table<String, String, JobStatistics>
+      dryRunQueryResults;
 
   FakeJobService() {
     this.datasetService = new FakeDatasetService();
+  }
+
+  public static void setUp() {
+    allJobs = HashBasedTable.create();
+    numExtractJobCalls = 0;
+    filesForLoadJobs = HashBasedTable.create();
+    dryRunQueryResults = HashBasedTable.create();
   }
 
   @Override
@@ -127,8 +134,7 @@ class FakeJobService implements JobService, Serializable {
               filename + ThreadLocalRandom.current().nextInt(), false /* isDirectory */));
         }
 
-        FileSystems.copy(sourceFiles.build(), loadFiles.build(),
-            MoveOptions.StandardMoveOptions.IGNORE_MISSING_FILES);
+        FileSystems.copy(sourceFiles.build(), loadFiles.build());
         filesForLoadJobs.put(jobRef.getProjectId(), jobRef.getJobId(), loadFiles.build());
       }
 
@@ -302,6 +308,7 @@ class FakeJobService implements JobService, Serializable {
       throws InterruptedException, IOException {
     TableReference destination = load.getDestinationTable();
     TableSchema schema = load.getSchema();
+    checkArgument(schema != null, "No schema specified");
     List<ResourceId> sourceFiles = filesForLoadJobs.get(jobRef.getProjectId(), jobRef.getJobId());
     WriteDisposition writeDisposition = WriteDisposition.valueOf(load.getWriteDisposition());
     CreateDisposition createDisposition = CreateDisposition.valueOf(load.getCreateDisposition());
@@ -310,14 +317,27 @@ class FakeJobService implements JobService, Serializable {
     if (!validateDispositions(existingTable, createDisposition, writeDisposition)) {
       return new JobStatus().setState("FAILED").setErrorResult(new ErrorProto());
     }
-
-    datasetService.createTable(new Table().setTableReference(destination).setSchema(schema));
+    if (existingTable == null) {
+      TableReference strippedDestination =
+          destination
+              .clone()
+              .setTableId(BigQueryHelpers.stripPartitionDecorator(destination.getTableId()));
+      existingTable =
+          new Table()
+              .setTableReference(strippedDestination)
+              .setSchema(schema);
+      if (load.getTimePartitioning() != null) {
+        existingTable = existingTable.setTimePartitioning(load.getTimePartitioning());
+      }
+      datasetService.createTable(existingTable);
+    }
 
     List<TableRow> rows = Lists.newArrayList();
     for (ResourceId filename : sourceFiles) {
       rows.addAll(readRows(filename.toString()));
     }
     datasetService.insertAll(destination, rows, null);
+    FileSystems.delete(sourceFiles);
     return new JobStatus().setState("DONE");
   }
 
@@ -331,13 +351,30 @@ class FakeJobService implements JobService, Serializable {
     if (!validateDispositions(existingTable, createDisposition, writeDisposition)) {
       return new JobStatus().setState("FAILED").setErrorResult(new ErrorProto());
     }
-
+    TimePartitioning partitioning = null;
+    TableSchema schema = null;
+    boolean first = true;
     List<TableRow> allRows = Lists.newArrayList();
     for (TableReference source : sources) {
+      Table table = checkNotNull(datasetService.getTable(source));
+      if (!first) {
+        if (partitioning != table.getTimePartitioning()) {
+          return new JobStatus().setState("FAILED").setErrorResult(new ErrorProto());
+        }
+        if (schema != table.getSchema()) {
+          return new JobStatus().setState("FAILED").setErrorResult(new ErrorProto());
+        }
+      }
+      partitioning = table.getTimePartitioning();
+      schema = table.getSchema();
+      first = false;
       allRows.addAll(datasetService.getAllRows(
           source.getProjectId(), source.getDatasetId(), source.getTableId()));
     }
-    datasetService.createTable(new Table().setTableReference(destination));
+    datasetService.createTable(new Table()
+        .setTableReference(destination)
+        .setSchema(schema)
+        .setTimePartitioning(partitioning));
     datasetService.insertAll(destination, allRows, null);
     return new JobStatus().setState("DONE");
   }

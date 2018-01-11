@@ -98,7 +98,6 @@ public class WindowedWordCount {
    * 2-hour period.
    */
   static class AddTimestampFn extends DoFn<String, String> {
-    private static final Duration RAND_RANGE = Duration.standardHours(1);
     private final Instant minTimestamp;
     private final Instant maxTimestamp;
 
@@ -162,7 +161,7 @@ public class WindowedWordCount {
     Long getMaxTimestampMillis();
     void setMaxTimestampMillis(Long value);
 
-    @Description("Fixed number of shards to produce per window, or null for runner-chosen sharding")
+    @Description("Fixed number of shards to produce per window")
     Integer getNumShards();
     void setNumShards(Integer numShards);
   }

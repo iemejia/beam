@@ -19,21 +19,23 @@
 
 Only those coders listed in __all__ are part of the public API of this module.
 """
+from __future__ import absolute_import
 
 import base64
 import cPickle as pickle
+
 import google.protobuf
 
 from apache_beam.coders import coder_impl
 from apache_beam.portability.api import beam_runner_api_pb2
-from apache_beam.utils import urns
 from apache_beam.utils import proto_utils
+from apache_beam.utils import urns
 
 # pylint: disable=wrong-import-order, wrong-import-position, ungrouped-imports
 try:
-  from stream import get_varint_size
+  from .stream import get_varint_size
 except ImportError:
-  from slow_stream import get_varint_size
+  from .slow_stream import get_varint_size
 # pylint: enable=wrong-import-order, wrong-import-position, ungrouped-imports
 
 
@@ -94,6 +96,16 @@ class Coder(object):
       Whether coder is deterministic.
     """
     return False
+
+  def as_deterministic_coder(self, step_label, error_message=None):
+    """Returns a deterministic version of self, if possible.
+
+    Otherwise raises a value error.
+    """
+    if self.is_deterministic():
+      return self
+    else:
+      raise ValueError(error_message or "'%s' cannot be made deterministic.")
 
   def estimate_size(self, value):
     """Estimates the encoded size of the given value, in bytes.
@@ -233,7 +245,6 @@ class Coder(object):
         spec=beam_runner_api_pb2.SdkFunctionSpec(
             spec=beam_runner_api_pb2.FunctionSpec(
                 urn=urn,
-                any_param=proto_utils.pack_Any(typed_param),
                 payload=typed_param.SerializeToString()
                 if typed_param is not None else None)),
         component_coder_ids=[context.coders.get_id(c) for c in components])
@@ -496,6 +507,9 @@ class PickleCoder(_PickleCoderBase):
     return coder_impl.CallbackCoderImpl(
         lambda x: dumps(x, HIGHEST_PROTOCOL), pickle.loads)
 
+  def as_deterministic_coder(self, step_label, error_message=None):
+    return DeterministicFastPrimitivesCoder(self, step_label)
+
 
 class DillCoder(_PickleCoderBase):
   """Coder using dill's pickle functionality."""
@@ -542,6 +556,12 @@ class FastPrimitivesCoder(FastCoder):
 
   def is_deterministic(self):
     return self._fallback_coder.is_deterministic()
+
+  def as_deterministic_coder(self, step_label, error_message=None):
+    if self.is_deterministic():
+      return self
+    else:
+      return DeterministicFastPrimitivesCoder(self, step_label)
 
   def as_cloud_object(self, is_pair_like=True):
     value = super(FastCoder, self).as_cloud_object()
@@ -661,6 +681,13 @@ class TupleCoder(FastCoder):
   def is_deterministic(self):
     return all(c.is_deterministic() for c in self._coders)
 
+  def as_deterministic_coder(self, step_label, error_message=None):
+    if self.is_deterministic():
+      return self
+    else:
+      return TupleCoder([c.as_deterministic_coder(step_label, error_message)
+                         for c in self._coders])
+
   @staticmethod
   def from_type_hint(typehint, registry):
     return TupleCoder([registry.get_coder(t) for t in typehint.tuple_types])
@@ -707,6 +734,16 @@ class TupleCoder(FastCoder):
   def __hash__(self):
     return hash(self._coders)
 
+  def to_runner_api_parameter(self, context):
+    if self.is_kv_coder():
+      return urns.KV_CODER, None, self.coders()
+    else:
+      return super(TupleCoder, self).to_runner_api_parameter(context)
+
+  @Coder.register_urn(urns.KV_CODER, None)
+  def from_runner_api_parameter(unused_payload, components, unused_context):
+    return TupleCoder(components)
+
 
 class TupleSequenceCoder(FastCoder):
   """Coder of homogeneous tuple objects."""
@@ -719,6 +756,13 @@ class TupleSequenceCoder(FastCoder):
 
   def is_deterministic(self):
     return self._elem_coder.is_deterministic()
+
+  def as_deterministic_coder(self, step_label, error_message=None):
+    if self.is_deterministic():
+      return self
+    else:
+      return TupleSequenceCoder(
+          self._elem_coder.as_deterministic_coder(step_label, error_message))
 
   @staticmethod
   def from_type_hint(typehint, registry):
@@ -749,6 +793,13 @@ class IterableCoder(FastCoder):
 
   def is_deterministic(self):
     return self._elem_coder.is_deterministic()
+
+  def as_deterministic_coder(self, step_label, error_message=None):
+    if self.is_deterministic():
+      return self
+    else:
+      return IterableCoder(
+          self._elem_coder.as_deterministic_coder(step_label, error_message))
 
   def as_cloud_object(self):
     return {

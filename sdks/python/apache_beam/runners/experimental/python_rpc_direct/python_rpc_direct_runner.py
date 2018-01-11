@@ -30,7 +30,6 @@ from apache_beam.runners.job.manager import DockerRPCManager
 from apache_beam.runners.runner import PipelineResult
 from apache_beam.runners.runner import PipelineRunner
 
-
 __all__ = ['PythonRPCDirectRunner']
 
 
@@ -97,7 +96,7 @@ class PythonRPCDirectPipelineResult(PipelineResult):
       if message.HasField('stateResponse'):
         logging.info(
             'Current state of job: %s',
-            beam_job_api_pb2.JobState.JobStateType.Name(
+            beam_job_api_pb2.JobState.Enum.Name(
                 message.stateResponse.state))
       else:
         logging.info('Message %s', message.messageResponse)

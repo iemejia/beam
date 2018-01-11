@@ -28,11 +28,14 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
+import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
+import org.apache.beam.model.pipeline.v1.RunnerApi;
 import org.apache.beam.runners.core.construction.CombineTranslation;
 import org.apache.beam.runners.core.construction.PTransformTranslation;
 import org.apache.beam.runners.core.construction.PTransformTranslation.RawPTransform;
 import org.apache.beam.runners.core.construction.SingleInputOutputOverrideFactory;
+import org.apache.beam.runners.local.StructuralKey;
 import org.apache.beam.sdk.coders.CannotProvideCoderException;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.coders.KvCoder;
@@ -177,10 +180,16 @@ class MultiStepCombine<K, InputT, AccumT, OutputT>
     this.outputCoder = outputCoder;
   }
 
-  @Nullable
+  @Nonnull
   @Override
   public String getUrn() {
     return "urn:beam:directrunner:transforms:multistepcombine:v1";
+  }
+
+  @Nullable
+  @Override
+  public RunnerApi.FunctionSpec getSpec() {
+    return null;
   }
 
   @Override
@@ -337,10 +346,16 @@ class MultiStepCombine<K, InputT, AccumT, OutputT>
           input.getPipeline(), input.getWindowingStrategy(), input.isBounded(), outputCoder);
     }
 
-    @Nullable
+    @Nonnull
     @Override
     public String getUrn() {
       return DIRECT_MERGE_ACCUMULATORS_EXTRACT_OUTPUT_URN;
+    }
+
+    @Nullable
+    @Override
+    public RunnerApi.FunctionSpec getSpec() {
+      return null;
     }
   }
 

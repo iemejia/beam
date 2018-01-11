@@ -89,7 +89,7 @@ public class WindowedWordCountIT {
   @Test
   public void testWindowedWordCountInBatchDynamicSharding() throws Exception {
     WindowedWordCountITOptions options = batchOptions();
-    // This is the default value, but make it explicit
+    // This is the default value, but make it explicit.
     options.setNumShards(null);
     testWindowedWordCountPipeline(options);
   }

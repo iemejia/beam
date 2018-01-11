@@ -38,6 +38,7 @@ import org.apache.beam.runners.core.StateTags;
 import org.apache.beam.runners.core.TimerInternals.TimerData;
 import org.apache.beam.runners.direct.DirectExecutionContext.DirectStepContext;
 import org.apache.beam.runners.direct.ParDoMultiOverrideFactory.StatefulParDo;
+import org.apache.beam.runners.local.StructuralKey;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.runners.AppliedPTransform;
 import org.apache.beam.sdk.state.StateSpec;
@@ -66,7 +67,19 @@ final class StatefulParDoEvaluatorFactory<K, InputT, OutputT> implements Transfo
   StatefulParDoEvaluatorFactory(EvaluationContext evaluationContext) {
     this.delegateFactory =
         new ParDoEvaluatorFactory<>(
-            evaluationContext, ParDoEvaluator.<KV<K, InputT>, OutputT>defaultRunnerFactory());
+            evaluationContext,
+            ParDoEvaluator.<KV<K, InputT>, OutputT>defaultRunnerFactory(),
+            new CacheLoader<AppliedPTransform<?, ?, ?>, DoFnLifecycleManager>() {
+              @Override
+              public DoFnLifecycleManager load(AppliedPTransform<?, ?, ?> appliedStatefulParDo)
+                  throws Exception {
+                // StatefulParDo is overridden after the portable pipeline is received, so we
+                // do not go through the portability translation layers
+                StatefulParDo<?, ?, ?> statefulParDo =
+                    (StatefulParDo<?, ?, ?>) appliedStatefulParDo.getTransform();
+                return DoFnLifecycleManager.of(statefulParDo.getDoFn());
+              }
+            });
     this.cleanupRegistry =
         CacheBuilder.newBuilder()
             .weakValues()
@@ -119,7 +132,6 @@ final class StatefulParDoEvaluatorFactory<K, InputT, OutputT> implements Transfo
             (AppliedPTransform) application,
             (PCollection) inputBundle.getPCollection(),
             inputBundle.getKey(),
-            doFn,
             application.getTransform().getSideInputs(),
             application.getTransform().getMainOutputTag(),
             application.getTransform().getAdditionalOutputTags().getAll());

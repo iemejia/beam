@@ -42,7 +42,6 @@ import org.apache.beam.sdk.options.PipelineOptions;
 import org.apache.beam.sdk.options.ValueProvider;
 import org.apache.beam.sdk.options.ValueProvider.StaticValueProvider;
 import org.apache.beam.sdk.transforms.PTransform;
-import org.apache.beam.sdk.transforms.SerializableFunction;
 import org.apache.beam.sdk.transforms.display.DisplayData;
 import org.apache.beam.sdk.util.MimeTypes;
 import org.apache.beam.sdk.values.PBegin;
@@ -51,6 +50,12 @@ import org.apache.beam.sdk.values.PDone;
 
 /**
  * {@link PTransform}s for reading and writing TensorFlow TFRecord files.
+ *
+ * <p>For reading files, use {@link #read}.
+ *
+ * <p>For simple cases of writing files, use {@link #write}. For more complex cases (such as ability
+ * to write windowed data or writing to multiple destinations) use {@link #sink} in combination with
+ * {@link FileIO#write} or {@link FileIO#writeDynamic}.
  */
 public class TFRecordIO {
   /** The default coder, which returns each record of the input file as a byte array. */
@@ -64,7 +69,7 @@ public class TFRecordIO {
   public static Read read() {
     return new AutoValue_TFRecordIO_Read.Builder()
         .setValidate(true)
-        .setCompressionType(CompressionType.AUTO)
+        .setCompression(Compression.AUTO)
         .build();
   }
 
@@ -78,8 +83,16 @@ public class TFRecordIO {
         .setShardTemplate(null)
         .setFilenameSuffix(null)
         .setNumShards(0)
-        .setCompressionType(CompressionType.NONE)
+        .setCompression(Compression.UNCOMPRESSED)
         .build();
+  }
+
+  /**
+   * Returns a {@link FileIO.Sink} for use with {@link FileIO#write} and {@link
+   * FileIO#writeDynamic}.
+   */
+  public static Sink sink() {
+    return new Sink();
   }
 
   /** Implementation of {@link #read}. */
@@ -90,7 +103,7 @@ public class TFRecordIO {
 
     abstract boolean getValidate();
 
-    abstract CompressionType getCompressionType();
+    abstract Compression getCompression();
 
     abstract Builder toBuilder();
 
@@ -98,7 +111,7 @@ public class TFRecordIO {
     abstract static class Builder {
       abstract Builder setFilepattern(ValueProvider<String> filepattern);
       abstract Builder setValidate(boolean validate);
-      abstract Builder setCompressionType(CompressionType compressionType);
+      abstract Builder setCompression(Compression compression);
 
       abstract Read build();
     }
@@ -134,18 +147,22 @@ public class TFRecordIO {
       return toBuilder().setValidate(false).build();
     }
 
-    /**
-     * Returns a transform for reading TFRecord files that decompresses all input files
-     * using the specified compression type.
-     *
-     * <p>If no compression type is specified, the default is
-     * {@link TFRecordIO.CompressionType#AUTO}.
-     * In this mode, the compression type of the file is determined by its extension
-     * (e.g., {@code *.gz} is gzipped, {@code *.zlib} is zlib compressed, and all other
-     * extensions are uncompressed).
-     */
+    /** @deprecated Use {@link #withCompression}. */
+    @Deprecated
     public Read withCompressionType(TFRecordIO.CompressionType compressionType) {
-      return toBuilder().setCompressionType(compressionType).build();
+      return withCompression(compressionType.canonical);
+    }
+
+    /**
+     * Returns a transform for reading TFRecord files that decompresses all input files using the
+     * specified compression type.
+     *
+     * <p>If no compression type is specified, the default is {@link Compression#AUTO}. In this
+     * mode, the compression type of the file is determined by its extension via {@link
+     * Compression#detect(String)}.
+     */
+    public Read withCompression(Compression compression) {
+      return toBuilder().setCompression(compression).build();
     }
 
     @Override
@@ -174,36 +191,19 @@ public class TFRecordIO {
 
     // Helper to create a source specific to the requested compression type.
     protected FileBasedSource<byte[]> getSource() {
-      switch (getCompressionType()) {
-        case NONE:
-          return new TFRecordSource(getFilepattern());
-        case AUTO:
-          return CompressedSource.from(new TFRecordSource(getFilepattern()));
-        case GZIP:
-          return
-              CompressedSource.from(new TFRecordSource(getFilepattern()))
-                  .withDecompression(CompressedSource.CompressionMode.GZIP);
-        case ZLIB:
-          return
-              CompressedSource.from(new TFRecordSource(getFilepattern()))
-                  .withDecompression(CompressedSource.CompressionMode.DEFLATE);
-        default:
-          throw new IllegalArgumentException("Unknown compression type: " + getCompressionType());
-      }
+      return CompressedSource.from(new TFRecordSource(getFilepattern()))
+          .withCompression(getCompression());
     }
 
     @Override
     public void populateDisplayData(DisplayData.Builder builder) {
       super.populateDisplayData(builder);
-
-      String filepatternDisplay = getFilepattern().isAccessible()
-          ? getFilepattern().get() : getFilepattern().toString();
       builder
-          .add(DisplayData.item("compressionType", getCompressionType().toString())
+          .add(DisplayData.item("compressionType", getCompression().toString())
               .withLabel("Compression Type"))
           .addIfNotDefault(DisplayData.item("validation", getValidate())
               .withLabel("Validation Enabled"), true)
-          .addIfNotNull(DisplayData.item("filePattern", filepatternDisplay)
+          .addIfNotNull(DisplayData.item("filePattern", getFilepattern())
               .withLabel("File Pattern"));
     }
   }
@@ -226,7 +226,7 @@ public class TFRecordIO {
     @Nullable abstract String getShardTemplate();
 
     /** Option to indicate the output sink's compression type. Default is NONE. */
-    abstract CompressionType getCompressionType();
+    abstract Compression getCompression();
 
     abstract Builder toBuilder();
 
@@ -236,11 +236,11 @@ public class TFRecordIO {
 
       abstract Builder setShardTemplate(String shardTemplate);
 
-      abstract Builder setFilenameSuffix(String filenameSuffix);
+      abstract Builder setFilenameSuffix(@Nullable String filenameSuffix);
 
       abstract Builder setNumShards(int numShards);
 
-      abstract Builder setCompressionType(CompressionType compressionType);
+      abstract Builder setCompression(Compression compression);
 
       abstract Write build();
     }
@@ -329,15 +329,20 @@ public class TFRecordIO {
       return withNumShards(1).withShardNameTemplate("");
     }
 
+    /** @deprecated use {@link #withCompression}. */
+    @Deprecated
+    public Write withCompressionType(CompressionType compressionType) {
+      return withCompression(compressionType.canonical);
+    }
+
     /**
      * Writes to output files using the specified compression type.
      *
-     * <p>If no compression type is specified, the default is
-     * {@link TFRecordIO.CompressionType#NONE}.
-     * See {@link TFRecordIO.Read#withCompressionType} for more details.
+     * <p>If no compression type is specified, the default is {@link Compression#UNCOMPRESSED}. See
+     * {@link TFRecordIO.Read#withCompression} for more details.
      */
-    public Write withCompressionType(CompressionType compressionType) {
-      return toBuilder().setCompressionType(compressionType).build();
+    public Write withCompression(Compression compression) {
+      return toBuilder().setCompression(compression).build();
     }
 
     @Override
@@ -350,26 +355,19 @@ public class TFRecordIO {
                   getOutputPrefix(),
                   getShardTemplate(),
                   getFilenameSuffix(),
-                  getCompressionType()));
+                  getCompression()));
       if (getNumShards() > 0) {
         write = write.withNumShards(getNumShards());
       }
-      return input.apply("Write", write);
+      input.apply("Write", write);
+      return PDone.in(input.getPipeline());
     }
 
     @Override
     public void populateDisplayData(DisplayData.Builder builder) {
       super.populateDisplayData(builder);
-
-      String outputPrefixString = null;
-      if (getOutputPrefix().isAccessible()) {
-        ResourceId dir = getOutputPrefix().get();
-        outputPrefixString = dir.toString();
-      } else {
-        outputPrefixString = getOutputPrefix().toString();
-      }
       builder
-          .add(DisplayData.item("filePrefix", outputPrefixString)
+          .add(DisplayData.item("filePrefix", getOutputPrefix())
               .withLabel("Output File Prefix"))
           .addIfNotNull(DisplayData.item("fileSuffix", getFilenameSuffix())
               .withLabel("Output File Suffix"))
@@ -377,45 +375,57 @@ public class TFRecordIO {
                   .withLabel("Output Shard Name Template"))
           .addIfNotDefault(DisplayData.item("numShards", getNumShards())
               .withLabel("Maximum Output Shards"), 0)
-          .add(DisplayData.item("compressionType", getCompressionType().toString())
+          .add(DisplayData.item("compressionType", getCompression().toString())
               .withLabel("Compression Type"));
     }
   }
 
-  /**
-   * Possible TFRecord file compression types.
-   */
-  public enum CompressionType {
-    /**
-     * Automatically determine the compression type based on filename extension.
-     */
-    AUTO(""),
-    /**
-     * Uncompressed.
-     */
-    NONE(""),
-    /**
-     * GZipped.
-     */
-    GZIP(".gz"),
-    /**
-     * ZLIB compressed.
-     */
-    ZLIB(".zlib");
+  /** A {@link FileIO.Sink} for use with {@link FileIO#write} and {@link FileIO#writeDynamic}. */
+  public static class Sink implements FileIO.Sink<byte[]> {
+    @Nullable private transient WritableByteChannel channel;
+    @Nullable private transient TFRecordCodec codec;
 
-    private String filenameSuffix;
-
-    CompressionType(String suffix) {
-      this.filenameSuffix = suffix;
+    @Override
+    public void open(WritableByteChannel channel) throws IOException {
+      this.channel = channel;
+      this.codec = new TFRecordCodec();
     }
 
-    /**
-     * Determine if a given filename matches a compression type based on its extension.
-     * @param filename the filename to match
-     * @return true iff the filename ends with the compression type's known extension.
-     */
+    @Override
+    public void write(byte[] element) throws IOException {
+      codec.write(channel, element);
+    }
+
+    @Override
+    public void flush() throws IOException {
+      // Nothing to do here.
+    }
+  }
+
+  /** @deprecated Use {@link Compression}. */
+  @Deprecated
+  public enum CompressionType {
+    /** @see Compression#AUTO */
+    AUTO(Compression.AUTO),
+
+    /** @see Compression#UNCOMPRESSED */
+    NONE(Compression.UNCOMPRESSED),
+
+    /** @see Compression#GZIP */
+    GZIP(Compression.GZIP),
+
+    /** @see Compression#DEFLATE */
+    ZLIB(Compression.DEFLATE);
+
+    private Compression canonical;
+
+    CompressionType(Compression canonical) {
+      this.canonical = canonical;
+    }
+
+    /** @see Compression#matches */
     public boolean matches(String filename) {
-      return filename.toLowerCase().endsWith(filenameSuffix.toLowerCase());
+      return canonical.matches(filename);
     }
   }
 
@@ -429,11 +439,6 @@ public class TFRecordIO {
    */
   @VisibleForTesting
   static class TFRecordSource extends FileBasedSource<byte[]> {
-    @VisibleForTesting
-    TFRecordSource(String fileSpec) {
-      super(StaticValueProvider.of(fileSpec), 1L);
-    }
-
     @VisibleForTesting
     TFRecordSource(ValueProvider<String> fileSpec) {
       super(fileSpec, Long.MAX_VALUE);
@@ -463,7 +468,7 @@ public class TFRecordIO {
     }
 
     @Override
-    protected boolean isSplittable() throws Exception {
+    protected boolean isSplittable() {
       // TFRecord files are not splittable
       return false;
     }
@@ -479,9 +484,9 @@ public class TFRecordIO {
       private long startOfRecord;
       private volatile long startOfNextRecord;
       private volatile boolean elementIsPresent;
-      private byte[] currentValue;
-      private ReadableByteChannel inChannel;
-      private TFRecordCodec codec;
+      private @Nullable byte[] currentValue;
+      private @Nullable ReadableByteChannel inChannel;
+      private @Nullable TFRecordCodec codec;
 
       private TFRecordReader(TFRecordSource source) {
         super(source);
@@ -539,40 +544,18 @@ public class TFRecordIO {
         ValueProvider<ResourceId> outputPrefix,
         @Nullable String shardTemplate,
         @Nullable String suffix,
-        TFRecordIO.CompressionType compressionType) {
+        Compression compression) {
       super(
           outputPrefix,
           DynamicFileDestinations.<byte[]>constant(
               DefaultFilenamePolicy.fromStandardParameters(
                   outputPrefix, shardTemplate, suffix, false)),
-          writableByteChannelFactory(compressionType));
-    }
-
-    private static class ExtractDirectory implements SerializableFunction<ResourceId, ResourceId> {
-      @Override
-      public ResourceId apply(ResourceId input) {
-        return input.getCurrentDirectory();
-      }
+          compression);
     }
 
     @Override
     public WriteOperation<Void, byte[]> createWriteOperation() {
       return new TFRecordWriteOperation(this);
-    }
-
-    private static WritableByteChannelFactory writableByteChannelFactory(
-        TFRecordIO.CompressionType compressionType) {
-      switch (compressionType) {
-        case AUTO:
-          throw new IllegalArgumentException("Unsupported compression type AUTO");
-        case NONE:
-          return CompressionType.UNCOMPRESSED;
-        case GZIP:
-          return CompressionType.GZIP;
-        case ZLIB:
-          return CompressionType.DEFLATE;
-      }
-      return CompressionType.UNCOMPRESSED;
     }
 
     /** A {@link WriteOperation WriteOperation} for TFRecord files. */
@@ -589,8 +572,8 @@ public class TFRecordIO {
 
     /** A {@link Writer Writer} for TFRecord files. */
     private static class TFRecordWriter extends Writer<Void, byte[]> {
-      private WritableByteChannel outChannel;
-      private TFRecordCodec codec;
+      private @Nullable WritableByteChannel outChannel;
+      private @Nullable TFRecordCodec codec;
 
       private TFRecordWriter(WriteOperation<Void, byte[]> writeOperation) {
         super(writeOperation, MimeTypes.BINARY);
@@ -639,7 +622,7 @@ public class TFRecordIO {
       return HEADER_LEN + data.length + FOOTER_LEN;
     }
 
-    public byte[] read(ReadableByteChannel inChannel) throws IOException {
+    public @Nullable byte[] read(ReadableByteChannel inChannel) throws IOException {
       header.clear();
       int headerBytes = inChannel.read(header);
       if (headerBytes <= 0) {

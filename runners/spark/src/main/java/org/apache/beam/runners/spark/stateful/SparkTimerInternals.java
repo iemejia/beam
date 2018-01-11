@@ -36,7 +36,6 @@ import org.apache.beam.sdk.state.TimeDomain;
 import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
 import org.joda.time.Instant;
 
-
 /**
  * An implementation of {@link TimerInternals} for the SparkRunner.
  */
@@ -102,22 +101,9 @@ public class SparkTimerInternals implements TimerInternals {
     return timers;
   }
 
-  /** This should only be called after processing the element. */
-  Collection<TimerData> getTimersReadyToProcess() {
-    Set<TimerData> toFire = Sets.newHashSet();
-    Iterator<TimerData> iterator = timers.iterator();
-    while (iterator.hasNext()) {
-      TimerData timer = iterator.next();
-      if (timer.getTimestamp().isBefore(inputWatermark)) {
-        toFire.add(timer);
-        iterator.remove();
-      }
-    }
-    return toFire;
-  }
-
-  void addTimers(Iterable<TimerData> timers) {
-    for (TimerData timer: timers) {
+  void addTimers(Iterator<TimerData> timers) {
+    while (timers.hasNext()) {
+      TimerData timer = timers.next();
       this.timers.add(timer);
     }
   }
@@ -183,9 +169,9 @@ public class SparkTimerInternals implements TimerInternals {
     return CoderHelpers.toByteArrays(timers, timerDataCoder);
   }
 
-  public static Iterable<TimerData> deserializeTimers(
+  public static Iterator<TimerData> deserializeTimers(
       Collection<byte[]> serTimers, TimerDataCoder timerDataCoder) {
-    return CoderHelpers.fromByteArrays(serTimers, timerDataCoder);
+    return CoderHelpers.fromByteArrays(serTimers, timerDataCoder).iterator();
   }
 
   @Override

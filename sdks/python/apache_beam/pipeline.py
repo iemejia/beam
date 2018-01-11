@@ -55,22 +55,21 @@ import tempfile
 
 from apache_beam import pvalue
 from apache_beam.internal import pickler
-from apache_beam.pvalue import PCollection
-from apache_beam.runners import create_runner
-from apache_beam.runners import PipelineRunner
-from apache_beam.transforms import ptransform
-from apache_beam.typehints import typehints
-from apache_beam.typehints import TypeCheckError
 from apache_beam.options.pipeline_options import PipelineOptions
 from apache_beam.options.pipeline_options import SetupOptions
 from apache_beam.options.pipeline_options import StandardOptions
 from apache_beam.options.pipeline_options import TypeOptions
 from apache_beam.options.pipeline_options_validator import PipelineOptionsValidator
-from apache_beam.utils.annotations import deprecated
+from apache_beam.pvalue import PCollection
+from apache_beam.runners import PipelineRunner
+from apache_beam.runners import create_runner
+from apache_beam.transforms import ptransform
+from apache_beam.typehints import TypeCheckError
+from apache_beam.typehints import typehints
 from apache_beam.utils import urns
+from apache_beam.utils.annotations import deprecated
 
-
-__all__ = ['Pipeline']
+__all__ = ['Pipeline', 'PTransformOverride']
 
 
 class Pipeline(object):
@@ -337,7 +336,7 @@ class Pipeline(object):
         pickler.dump_session(os.path.join(tmpdir, 'main_session.pickle'))
       finally:
         shutil.rmtree(tmpdir)
-    return self.runner.run(self)
+    return self.runner.run_pipeline(self)
 
   def __enter__(self):
     return self
@@ -439,7 +438,7 @@ class Pipeline(object):
     if type_options is not None and type_options.pipeline_type_check:
       transform.type_check_outputs(pvalueish_result)
 
-    for result in ptransform.GetPValues().visit(pvalueish_result):
+    for result in ptransform.get_nested_pvalues(pvalueish_result):
       assert isinstance(result, (pvalue.PValue, pvalue.DoOutputsTuple))
 
       # Make sure we set the producer only for a leaf node in the transform DAG.
@@ -507,9 +506,6 @@ class Pipeline(object):
         self.visit_transform(transform_node)
 
       def visit_transform(self, transform_node):
-        if transform_node.side_inputs:
-          # No side inputs (yet).
-          Visitor.ok = False
         try:
           # Transforms must be picklable.
           pickler.loads(pickler.dumps(transform_node.transform,
@@ -525,7 +521,7 @@ class Pipeline(object):
     self.visit(Visitor())
     return Visitor.ok
 
-  def to_runner_api(self):
+  def to_runner_api(self, return_context=False):
     """For internal use only; no backwards-compatibility guarantees."""
     from apache_beam.runners import pipeline_context
     from apache_beam.portability.api import beam_runner_api_pb2
@@ -536,10 +532,13 @@ class Pipeline(object):
     proto = beam_runner_api_pb2.Pipeline(
         root_transform_ids=[root_transform_id],
         components=context.to_runner_api())
-    return proto
+    if return_context:
+      return proto, context
+    else:
+      return proto
 
   @staticmethod
-  def from_runner_api(proto, runner, options):
+  def from_runner_api(proto, runner, options, return_context=False):
     """For internal use only; no backwards-compatibility guarantees."""
     p = Pipeline(runner=runner, options=options)
     from apache_beam.runners import pipeline_context
@@ -553,6 +552,8 @@ class Pipeline(object):
     for id in proto.components.pcollections:
       pcollection = context.pcollections.get_by_id(id)
       pcollection.pipeline = p
+      if not pcollection.producer:
+        raise ValueError('No producer for %s' % id)
 
     # Inject PBegin input where necessary.
     from apache_beam.io.iobase import Read
@@ -563,7 +564,10 @@ class Pipeline(object):
       if not transform.inputs and transform.transform.__class__ in has_pbegin:
         transform.inputs = (pvalue.PBegin(p),)
 
-    return p
+    if return_context:
+      return p, context
+    else:
+      return p
 
 
 class PipelineVisitor(object):
@@ -731,8 +735,12 @@ class AppliedPTransform(object):
 
   def named_inputs(self):
     # TODO(BEAM-1833): Push names up into the sdk construction.
-    return {str(ix): input for ix, input in enumerate(self.inputs)
-            if isinstance(input, pvalue.PCollection)}
+    main_inputs = {str(ix): input
+                   for ix, input in enumerate(self.inputs)
+                   if isinstance(input, pvalue.PCollection)}
+    side_inputs = {'side%s' % ix: si.pvalue
+                   for ix, si in enumerate(self.side_inputs)}
+    return dict(main_inputs, **side_inputs)
 
   def named_outputs(self):
     return {str(tag): output for tag, output in self.outputs.items()
@@ -751,7 +759,6 @@ class AppliedPTransform(object):
         spec=transform_to_runner_api(self.transform, context),
         subtransforms=[context.transforms.get_id(part, label=part.full_label)
                        for part in self.parts],
-        # TODO(BEAM-115): Side inputs.
         inputs={tag: context.pcollections.get_id(pc)
                 for tag, pc in self.named_inputs().items()},
         outputs={str(tag): context.pcollections.get_id(out)
@@ -761,12 +768,26 @@ class AppliedPTransform(object):
 
   @staticmethod
   def from_runner_api(proto, context):
+    def is_side_input(tag):
+      # As per named_inputs() above.
+      return tag.startswith('side')
+    main_inputs = [context.pcollections.get_by_id(id)
+                   for tag, id in proto.inputs.items()
+                   if not is_side_input(tag)]
+    # Ordering is important here.
+    indexed_side_inputs = [(int(tag[4:]), context.pcollections.get_by_id(id))
+                           for tag, id in proto.inputs.items()
+                           if is_side_input(tag)]
+    side_inputs = [si for _, si in sorted(indexed_side_inputs)]
     result = AppliedPTransform(
         parent=None,
         transform=ptransform.PTransform.from_runner_api(proto.spec, context),
         full_label=proto.unique_name,
-        inputs=[
-            context.pcollections.get_by_id(id) for id in proto.inputs.values()])
+        inputs=main_inputs)
+    if result.transform and result.transform.side_inputs:
+      for si, pcoll in zip(result.transform.side_inputs, side_inputs):
+        si.pvalue = pcoll
+      result.side_inputs = tuple(result.transform.side_inputs)
     result.parts = [
         context.transforms.get_by_id(id) for id in proto.subtransforms]
     result.outputs = {
@@ -777,10 +798,11 @@ class AppliedPTransform(object):
       result.transform.output_tags = set(proto.outputs.keys()).difference(
           {'None'})
     if not result.parts:
-      for tag, pc in result.outputs.items():
-        if pc not in result.inputs:
+      for tag, pcoll_id in proto.outputs.items():
+        if pcoll_id not in proto.inputs.values():
+          pc = context.pcollections.get_by_id(pcoll_id)
           pc.producer = result
-          pc.tag = tag
+          pc.tag = None if tag == 'None' else tag
     result.update_input_refcounts()
     return result
 

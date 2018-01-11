@@ -26,36 +26,38 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ExecutionException;
 import java.util.function.Consumer;
 import java.util.function.Function;
-import org.apache.beam.fn.v1.BeamFnApi;
-import org.apache.beam.sdk.values.KV;
+import org.apache.beam.model.fnexecution.v1.BeamFnApi;
+import org.apache.beam.model.pipeline.v1.Endpoints;
+import org.apache.beam.sdk.fn.data.LogicalEndpoint;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * A gRPC multiplexer for a specific {@link org.apache.beam.fn.v1.BeamFnApi.ApiServiceDescriptor}.
+ * A gRPC multiplexer for a specific {@link
+ * Endpoints.ApiServiceDescriptor}.
  *
- * <p>Multiplexes data for inbound consumers based upon their individual
- * {@link org.apache.beam.fn.v1.BeamFnApi.Target}s.
+ * <p>Multiplexes data for inbound consumers based upon their individual {@link
+ * org.apache.beam.model.fnexecution.v1.BeamFnApi.Target}s.
  *
- * <p>Multiplexing inbound and outbound streams is as thread safe as the consumers of those
- * streams. For inbound streams, this is as thread safe as the inbound observers. For outbound
- * streams, this is as thread safe as the underlying stream observer.
+ * <p>Multiplexing inbound and outbound streams is as thread safe as the consumers of those streams.
+ * For inbound streams, this is as thread safe as the inbound observers. For outbound streams, this
+ * is as thread safe as the underlying stream observer.
  *
- * <p>TODO: Add support for multiplexing over multiple outbound observers by stickying
- * the output location with a specific outbound observer.
+ * <p>TODO: Add support for multiplexing over multiple outbound observers by stickying the output
+ * location with a specific outbound observer.
  */
 public class BeamFnDataGrpcMultiplexer {
   private static final Logger LOG = LoggerFactory.getLogger(BeamFnDataGrpcMultiplexer.class);
-  private final BeamFnApi.ApiServiceDescriptor apiServiceDescriptor;
+  private final Endpoints.ApiServiceDescriptor apiServiceDescriptor;
   private final StreamObserver<BeamFnApi.Elements> inboundObserver;
   private final StreamObserver<BeamFnApi.Elements> outboundObserver;
   @VisibleForTesting
   final ConcurrentMap<
-          KV<String, BeamFnApi.Target>, CompletableFuture<Consumer<BeamFnApi.Elements.Data>>>
+          LogicalEndpoint, CompletableFuture<Consumer<BeamFnApi.Elements.Data>>>
       consumers;
 
   public BeamFnDataGrpcMultiplexer(
-      BeamFnApi.ApiServiceDescriptor apiServiceDescriptor,
+      Endpoints.ApiServiceDescriptor apiServiceDescriptor,
       Function<StreamObserver<BeamFnApi.Elements>,
                StreamObserver<BeamFnApi.Elements>> outboundObserverFactory) {
     this.apiServiceDescriptor = apiServiceDescriptor;
@@ -81,10 +83,8 @@ public class BeamFnDataGrpcMultiplexer {
   }
 
   public CompletableFuture<Consumer<BeamFnApi.Elements.Data>> futureForKey(
-      KV<String, BeamFnApi.Target> key) {
-    return consumers.computeIfAbsent(
-        key,
-        (KV<String, BeamFnApi.Target> unused) -> new CompletableFuture<>());
+      LogicalEndpoint key) {
+    return consumers.computeIfAbsent(key, (LogicalEndpoint unused) -> new CompletableFuture<>());
   }
 
   /**
@@ -100,8 +100,8 @@ public class BeamFnDataGrpcMultiplexer {
     public void onNext(BeamFnApi.Elements value) {
       for (BeamFnApi.Elements.Data data : value.getDataList()) {
         try {
-          KV<String, BeamFnApi.Target> key =
-              KV.of(data.getInstructionReference(), data.getTarget());
+          LogicalEndpoint key =
+              LogicalEndpoint.of(data.getInstructionReference(), data.getTarget());
           CompletableFuture<Consumer<BeamFnApi.Elements.Data>> consumer = futureForKey(key);
           if (!consumer.isDone()) {
             LOG.debug("Received data for key {} without consumer ready. "

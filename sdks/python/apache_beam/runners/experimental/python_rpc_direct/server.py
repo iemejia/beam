@@ -19,14 +19,14 @@
 """
 import time
 import uuid
-
 from concurrent import futures
+
 import grpc
 
+from apache_beam.options.pipeline_options import PipelineOptions
+from apache_beam.pipeline import Pipeline
 from apache_beam.portability.api import beam_job_api_pb2
 from apache_beam.portability.api import beam_job_api_pb2_grpc
-from apache_beam.pipeline import Pipeline
-from apache_beam.options.pipeline_options import PipelineOptions
 from apache_beam.runners.runner import PipelineState
 
 _ONE_DAY_IN_SECONDS = 60 * 60 * 24
@@ -72,7 +72,7 @@ class JobService(beam_job_api_pb2_grpc.JobServiceServicer):
   @staticmethod
   def _map_state_to_jobState(state):
     if state == PipelineState.UNKNOWN:
-      return beam_job_api_pb2.JobState.UNKNOWN
+      return beam_job_api_pb2.JobState.UNSPECIFIED
     elif state == PipelineState.STOPPED:
       return beam_job_api_pb2.JobState.STOPPED
     elif state == PipelineState.RUNNING:

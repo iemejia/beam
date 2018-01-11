@@ -20,6 +20,20 @@
 import logging
 import time
 
+from apache_beam.io.gcp.datastore.v1 import helper
+from apache_beam.io.gcp.datastore.v1 import query_splitter
+from apache_beam.io.gcp.datastore.v1 import util
+from apache_beam.io.gcp.datastore.v1.adaptive_throttler import AdaptiveThrottler
+from apache_beam.metrics.metric import Metrics
+from apache_beam.transforms import Create
+from apache_beam.transforms import DoFn
+from apache_beam.transforms import FlatMap
+from apache_beam.transforms import GroupByKey
+from apache_beam.transforms import Map
+from apache_beam.transforms import ParDo
+from apache_beam.transforms import PTransform
+from apache_beam.transforms.util import Values
+
 # Protect against environments where datastore library is not available.
 # pylint: disable=wrong-import-order, wrong-import-position
 try:
@@ -29,19 +43,6 @@ except ImportError:
   pass
 # pylint: enable=wrong-import-order, wrong-import-position
 
-from apache_beam.io.gcp.datastore.v1 import helper
-from apache_beam.io.gcp.datastore.v1 import query_splitter
-from apache_beam.io.gcp.datastore.v1 import util
-from apache_beam.io.gcp.datastore.v1.adaptive_throttler import AdaptiveThrottler
-from apache_beam.transforms import Create
-from apache_beam.transforms import DoFn
-from apache_beam.transforms import FlatMap
-from apache_beam.transforms import GroupByKey
-from apache_beam.transforms import Map
-from apache_beam.transforms import PTransform
-from apache_beam.transforms import ParDo
-from apache_beam.transforms.util import Values
-from apache_beam.metrics.metric import Metrics
 
 __all__ = ['ReadFromDatastore', 'WriteToDatastore', 'DeleteFromDatastore']
 
@@ -88,10 +89,10 @@ class ReadFromDatastore(PTransform):
   _DEFAULT_BUNDLE_SIZE_BYTES = 64 * 1024 * 1024
 
   def __init__(self, project, query, namespace=None, num_splits=0):
-    """Initialize the ReadFromDatastore transform.
+    """Initialize the `ReadFromDatastore` transform.
 
     Args:
-      project: The Project ID
+      project: The ID of the project to read from.
       query: Cloud Datastore query to be read from.
       namespace: An optional namespace.
       num_splits: Number of splits for the query.
@@ -458,7 +459,13 @@ class _Mutate(PTransform):
 
 class WriteToDatastore(_Mutate):
   """A ``PTransform`` to write a ``PCollection[Entity]`` to Cloud Datastore."""
+
   def __init__(self, project):
+    """Initialize the `WriteToDatastore` transform.
+
+    Args:
+      project: The ID of the project to write to.
+    """
 
     # Import here to avoid adding the dependency for local running scenarios.
     try:
@@ -485,6 +492,12 @@ class WriteToDatastore(_Mutate):
 class DeleteFromDatastore(_Mutate):
   """A ``PTransform`` to delete a ``PCollection[Key]`` from Cloud Datastore."""
   def __init__(self, project):
+    """Initialize the `DeleteFromDatastore` transform.
+
+    Args:
+      project: The ID of the project from which the entities will be deleted.
+    """
+
     super(DeleteFromDatastore, self).__init__(
         project, DeleteFromDatastore.to_delete_mutation)
 

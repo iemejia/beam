@@ -20,7 +20,6 @@ package org.apache.beam.sdk.io.xml;
 import static org.apache.beam.sdk.testing.SourceTestUtils.assertSplitAtFractionExhaustive;
 import static org.apache.beam.sdk.testing.SourceTestUtils.assertSplitAtFractionFails;
 import static org.apache.beam.sdk.testing.SourceTestUtils.assertSplitAtFractionSucceedsAndConsistent;
-import static org.apache.beam.sdk.transforms.display.DisplayDataMatchers.hasDisplayItem;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertThat;
@@ -47,7 +46,6 @@ import org.apache.beam.sdk.options.PipelineOptionsFactory;
 import org.apache.beam.sdk.testing.NeedsRunner;
 import org.apache.beam.sdk.testing.PAssert;
 import org.apache.beam.sdk.testing.TestPipeline;
-import org.apache.beam.sdk.transforms.display.DisplayData;
 import org.apache.beam.sdk.values.PCollection;
 import org.junit.Ignore;
 import org.junit.Rule;
@@ -59,7 +57,8 @@ import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
 
 /**
- * Tests XmlSource.
+ * Tests for {@link XmlSource} in particular - the rest of {@link XmlIO} is tested
+ * in {@link XmlIOTest}.
  */
 @RunWith(JUnit4.class)
 public class XmlSourceTest {
@@ -459,60 +458,6 @@ public class XmlSourceTest {
   }
 
   @Test
-  public void testReadXMLNoRootElement() throws IOException {
-    File file = tempFolder.newFile("trainXMLSmall");
-    Files.write(file.toPath(), trainXML.getBytes(StandardCharsets.UTF_8));
-
-    BoundedSource<Train> source =
-        XmlIO.<Train>read()
-            .from(file.toPath().toString())
-            .withRecordElement("train")
-            .withRecordClass(Train.class)
-            .createSource();
-
-    exception.expect(NullPointerException.class);
-    exception.expectMessage(
-        "rootElement is null. Use builder method withRootElement() to set this.");
-    readEverythingFromReader(source.createReader(null));
-  }
-
-  @Test
-  public void testReadXMLNoRecordElement() throws IOException {
-    File file = tempFolder.newFile("trainXMLSmall");
-    Files.write(file.toPath(), trainXML.getBytes(StandardCharsets.UTF_8));
-
-    BoundedSource<Train> source =
-        XmlIO.<Train>read()
-            .from(file.toPath().toString())
-            .withRootElement("trains")
-            .withRecordClass(Train.class)
-            .createSource();
-
-    exception.expect(NullPointerException.class);
-    exception.expectMessage(
-        "recordElement is null. Use builder method withRecordElement() to set this.");
-    readEverythingFromReader(source.createReader(null));
-  }
-
-  @Test
-  public void testReadXMLNoRecordClass() throws IOException {
-    File file = tempFolder.newFile("trainXMLSmall");
-    Files.write(file.toPath(), trainXML.getBytes(StandardCharsets.UTF_8));
-
-    BoundedSource<Train> source =
-        XmlIO.<Train>read()
-            .from(file.toPath().toString())
-            .withRootElement("trains")
-            .withRecordElement("train")
-            .createSource();
-
-    exception.expect(NullPointerException.class);
-    exception.expectMessage(
-        "recordClass is null. Use builder method withRecordClass() to set this.");
-    readEverythingFromReader(source.createReader(null));
-  }
-
-  @Test
   public void testReadXMLIncorrectRootElement() throws IOException {
     File file = tempFolder.newFile("trainXMLSmall");
     Files.write(file.toPath(), trainXML.getBytes(StandardCharsets.UTF_8));
@@ -784,27 +729,6 @@ public class XmlSourceTest {
   }
 
   @Test
-  @Category(NeedsRunner.class)
-  public void testReadXMLLargePipeline() throws IOException {
-    String fileName = "temp.xml";
-    List<Train> trains = generateRandomTrainList(100);
-    File file = createRandomTrainXML(fileName, trains);
-
-    PCollection<Train> output =
-        p.apply(
-            "ReadFileData",
-            XmlIO.<Train>read()
-                .from(file.toPath().toString())
-                .withRootElement("trains")
-                .withRecordElement("train")
-                .withRecordClass(Train.class)
-                .withMinBundleSize(1024));
-
-    PAssert.that(output).containsInAnyOrder(trains);
-    p.run();
-  }
-
-  @Test
   public void testSplitWithEmptyBundles() throws Exception {
     String fileName = "temp.xml";
     List<Train> trains = generateRandomTrainList(10);
@@ -934,54 +858,5 @@ public class XmlSourceTest {
             .withRecordClass(Train.class)
             .createSource();
     assertSplitAtFractionExhaustive(source, options);
-  }
-
-  @Test
-  @Category(NeedsRunner.class)
-  public void testReadXMLFilePattern() throws IOException {
-    List<Train> trains1 = generateRandomTrainList(20);
-    File file = createRandomTrainXML("temp1.xml", trains1);
-    List<Train> trains2 = generateRandomTrainList(10);
-    createRandomTrainXML("temp2.xml", trains2);
-    List<Train> trains3 = generateRandomTrainList(15);
-    createRandomTrainXML("temp3.xml", trains3);
-    generateRandomTrainList(8);
-    createRandomTrainXML("otherfile.xml", trains1);
-
-    PCollection<Train> output =
-        p.apply(
-            "ReadFileData",
-            XmlIO.<Train>read()
-                .from(file.getParent() + "/" + "temp*.xml")
-                .withRootElement("trains")
-                .withRecordElement("train")
-                .withRecordClass(Train.class)
-                .withMinBundleSize(1024));
-
-    List<Train> expectedResults = new ArrayList<>();
-    expectedResults.addAll(trains1);
-    expectedResults.addAll(trains2);
-    expectedResults.addAll(trains3);
-
-    PAssert.that(output).containsInAnyOrder(expectedResults);
-    p.run();
-  }
-
-  @Test
-  public void testDisplayData() {
-    DisplayData displayData =
-        DisplayData.from(
-            XmlIO.<Integer>read()
-                .from("foo.xml")
-                .withRootElement("bird")
-                .withRecordElement("cat")
-                .withMinBundleSize(1234)
-                .withRecordClass(Integer.class));
-
-    assertThat(displayData, hasDisplayItem("filePattern", "foo.xml"));
-    assertThat(displayData, hasDisplayItem("rootElement", "bird"));
-    assertThat(displayData, hasDisplayItem("recordElement", "cat"));
-    assertThat(displayData, hasDisplayItem("recordClass", Integer.class));
-    assertThat(displayData, hasDisplayItem("minBundleSize", 1234));
   }
 }

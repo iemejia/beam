@@ -20,6 +20,7 @@ package org.apache.beam.sdk.io.mqtt;
 import static com.google.common.base.Preconditions.checkArgument;
 
 import com.google.auto.value.AutoValue;
+import com.google.common.annotations.VisibleForTesting;
 import java.io.IOException;
 import java.io.Serializable;
 import java.util.ArrayList;
@@ -27,7 +28,9 @@ import java.util.Collections;
 import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 import javax.annotation.Nullable;
+
 import org.apache.beam.sdk.annotations.Experimental;
 import org.apache.beam.sdk.coders.ByteArrayCoder;
 import org.apache.beam.sdk.coders.Coder;
@@ -149,12 +152,8 @@ public class MqttIO {
      * @return A connection configuration to the MQTT broker.
      */
     public static ConnectionConfiguration create(String serverUri, String topic) {
-      checkArgument(serverUri != null,
-          "MqttIO.ConnectionConfiguration.create(serverUri, topic) called with null "
-              + "serverUri");
-      checkArgument(topic != null,
-          "MqttIO.ConnectionConfiguration.create(serverUri, topic) called with null "
-              + "topic");
+      checkArgument(serverUri != null, "serverUri can not be null");
+      checkArgument(topic != null, "topic can not be null");
       return new AutoValue_MqttIO_ConnectionConfiguration.Builder().setServerUri(serverUri)
           .setTopic(topic).build();
     }
@@ -168,14 +167,9 @@ public class MqttIO {
      * @return A connection configuration to the MQTT broker.
      */
     public static ConnectionConfiguration create(String serverUri, String topic, String clientId) {
-      checkArgument(serverUri != null,
-          "MqttIO.ConnectionConfiguration.create(serverUri, topic) called with null "
-              + "serverUri");
-      checkArgument(topic != null,
-          "MqttIO.ConnectionConfiguration.create(serverUri, topic) called with null "
-              + "topic");
-      checkArgument(clientId != null, "MqttIO.ConnectionConfiguration.create(serverUri,"
-          + "topic, clientId) called with null clientId");
+      checkArgument(serverUri != null, "serverUri can not be null");
+      checkArgument(topic != null, "topic can not be null");
+      checkArgument(clientId != null, "clientId can not be null");
       return new AutoValue_MqttIO_ConnectionConfiguration.Builder().setServerUri(serverUri)
           .setTopic(topic).setClientId(clientId).build();
     }
@@ -242,9 +236,7 @@ public class MqttIO {
      * Define the MQTT connection configuration used to connect to the MQTT broker.
      */
     public Read withConnectionConfiguration(ConnectionConfiguration configuration) {
-      checkArgument(configuration != null,
-          "MqttIO.read().withConnectionConfiguration(configuration) called with null "
-              + "configuration or not called at all");
+      checkArgument(configuration != null, "configuration can not be null");
       return builder().setConnectionConfiguration(configuration).build();
     }
 
@@ -254,8 +246,6 @@ public class MqttIO {
      * will provide a bounded {@link PCollection}.
      */
     public Read withMaxNumRecords(long maxNumRecords) {
-      checkArgument(maxReadTime() == null,
-          "maxNumRecord and maxReadTime are exclusive");
       return builder().setMaxNumRecords(maxNumRecords).build();
     }
 
@@ -265,13 +255,14 @@ public class MqttIO {
      * {@link PCollection}.
      */
     public Read withMaxReadTime(Duration maxReadTime) {
-      checkArgument(maxNumRecords() == Long.MAX_VALUE,
-          "maxNumRecord and maxReadTime are exclusive");
       return builder().setMaxReadTime(maxReadTime).build();
     }
 
     @Override
     public PCollection<byte[]> expand(PBegin input) {
+      checkArgument(
+          maxReadTime() == null || maxNumRecords() == Long.MAX_VALUE,
+          "withMaxNumRecords() and withMaxReadTime() are exclusive");
 
       org.apache.beam.sdk.io.Read.Unbounded<byte[]> unbounded =
           org.apache.beam.sdk.io.Read.from(new UnboundedMqttSource(this));
@@ -285,11 +276,6 @@ public class MqttIO {
       }
 
       return input.getPipeline().apply(transform);
-    }
-
-    @Override
-    public void validate(PipelineOptions options) {
-      // validation is performed in the ConnectionConfiguration create()
     }
 
     @Override
@@ -308,7 +294,8 @@ public class MqttIO {
    * Checkpoint for an unbounded MQTT source. Consists of the MQTT messages waiting to be
    * acknowledged and oldest pending message timestamp.
    */
-  private static class MqttCheckpointMark implements UnboundedSource.CheckpointMark, Serializable {
+  @VisibleForTesting
+  static class MqttCheckpointMark implements UnboundedSource.CheckpointMark, Serializable {
 
     private String clientId;
     private Instant oldestMessageTimestamp = Instant.now();
@@ -346,8 +333,8 @@ public class MqttIO {
 
   }
 
-  private static class UnboundedMqttSource
-      extends UnboundedSource<byte[], MqttCheckpointMark> {
+  @VisibleForTesting
+  static class UnboundedMqttSource extends UnboundedSource<byte[], MqttCheckpointMark> {
 
     private final Read spec;
 
@@ -372,11 +359,6 @@ public class MqttIO {
     }
 
     @Override
-    public void validate() {
-      spec.validate(null);
-    }
-
-    @Override
     public void populateDisplayData(DisplayData.Builder builder) {
       spec.populateDisplayData(builder);
     }
@@ -392,7 +374,8 @@ public class MqttIO {
     }
   }
 
-  private static class UnboundedMqttReader extends UnboundedSource.UnboundedReader<byte[]> {
+  @VisibleForTesting
+  static class UnboundedMqttReader extends UnboundedSource.UnboundedReader<byte[]> {
 
     private final UnboundedMqttSource source;
 
@@ -433,8 +416,11 @@ public class MqttIO {
     @Override
     public boolean advance() throws IOException {
       try {
-        LOG.debug("MQTT reader (client ID {}) waiting message ...", client.getClientId());
-        Message message = connection.receive();
+        LOG.trace("MQTT reader (client ID {}) waiting message ...", client.getClientId());
+        Message message = connection.receive(1, TimeUnit.SECONDS);
+        if (message == null) {
+          return false;
+        }
         current = message.getPayload();
         currentTimestamp = Instant.now();
         checkpointMark.add(message, currentTimestamp);
@@ -511,9 +497,7 @@ public class MqttIO {
      * Define MQTT connection configuration used to connect to the MQTT broker.
      */
     public Write withConnectionConfiguration(ConnectionConfiguration configuration) {
-      checkArgument(configuration != null,
-          "MqttIO.write().withConnectionConfiguration(configuration) called with null "
-              + "configuration or not called at all");
+      checkArgument(configuration != null, "configuration can not be null");
       return builder().setConnectionConfiguration(configuration).build();
     }
 
@@ -535,11 +519,6 @@ public class MqttIO {
     public PDone expand(PCollection<byte[]> input) {
       input.apply(ParDo.of(new WriteFn(this)));
       return PDone.in(input.getPipeline());
-    }
-
-    @Override
-    public void validate(PipelineOptions options) {
-      // validate is done in connection configuration
     }
 
     @Override

@@ -20,13 +20,15 @@
 Triggers control when in processing time windows get emitted.
 """
 
-from abc import ABCMeta
-from abc import abstractmethod
 import collections
 import copy
 import itertools
+import numbers
+from abc import ABCMeta
+from abc import abstractmethod
 
 from apache_beam.coders import observable
+from apache_beam.portability.api import beam_runner_api_pb2
 from apache_beam.transforms import combiners
 from apache_beam.transforms import core
 from apache_beam.transforms.timeutil import TimeDomain
@@ -34,7 +36,6 @@ from apache_beam.transforms.window import GlobalWindow
 from apache_beam.transforms.window import TimestampCombiner
 from apache_beam.transforms.window import WindowedValue
 from apache_beam.transforms.window import WindowFn
-from apache_beam.portability.api import beam_runner_api_pb2
 from apache_beam.utils.timestamp import MAX_TIMESTAMP
 from apache_beam.utils.timestamp import MIN_TIMESTAMP
 from apache_beam.utils.timestamp import TIME_GRANULARITY
@@ -58,8 +59,8 @@ __all__ = [
 class AccumulationMode(object):
   """Controls what to do with data when a trigger fires multiple times.
   """
-  DISCARDING = beam_runner_api_pb2.DISCARDING
-  ACCUMULATING = beam_runner_api_pb2.ACCUMULATING
+  DISCARDING = beam_runner_api_pb2.AccumulationMode.DISCARDING
+  ACCUMULATING = beam_runner_api_pb2.AccumulationMode.ACCUMULATING
   # TODO(robertwb): Provide retractions of previous outputs.
   # RETRACTING = 3
 
@@ -378,6 +379,8 @@ class AfterCount(TriggerFn):
   COUNT_TAG = _CombiningValueStateTag('count', combiners.CountCombineFn())
 
   def __init__(self, count):
+    if not isinstance(count, numbers.Integral) or count < 1:
+      raise ValueError("count (%d) must be a positive integer." % count)
     self.count = count
 
   def __repr__(self):
@@ -859,6 +862,19 @@ class TriggerDriver(object):
   def process_timer(self, window_id, name, time_domain, timestamp, state):
     pass
 
+  def process_entire_key(
+      self, key, windowed_values, output_watermark=MIN_TIMESTAMP):
+    state = InMemoryUnmergedState()
+    for wvalue in self.process_elements(
+        state, windowed_values, output_watermark):
+      yield wvalue.with_value((key, wvalue.value))
+    while state.timers:
+      fired = state.get_and_clear_timers()
+      for timer_window, (name, time_domain, fire_time) in fired:
+        for wvalue in self.process_timer(
+            timer_window, name, time_domain, fire_time, state):
+          yield wvalue.with_value((key, wvalue.value))
+
 
 class _UnwindowedValues(observable.ObservableMixin):
   """Exposes iterable of windowed values as iterable of unwindowed values."""
@@ -1064,6 +1080,15 @@ class InMemoryUnmergedState(UnmergedState):
     self.global_state = {}
     self.defensive_copy = defensive_copy
 
+  def copy(self):
+    cloned_object = InMemoryUnmergedState(defensive_copy=self.defensive_copy)
+    cloned_object.timers = copy.deepcopy(self.timers)
+    cloned_object.global_state = copy.deepcopy(self.global_state)
+    for window in self.state:
+      for tag in self.state[window]:
+        cloned_object.state[window][tag] = copy.copy(self.state[window][tag])
+    return cloned_object
+
   def set_global_state(self, tag, value):
     assert isinstance(tag, _ValueStateTag)
     if self.defensive_copy:
@@ -1116,20 +1141,37 @@ class InMemoryUnmergedState(UnmergedState):
     if not self.state[window]:
       self.state.pop(window, None)
 
-  def get_timers(self, clear=False, watermark=MAX_TIMESTAMP):
+  def get_timers(self, clear=False, watermark=MAX_TIMESTAMP,
+                 processing_time=None):
+    """Gets expired timers and reports if there
+    are any realtime timers set per state.
+
+    Expiration is measured against the watermark for event-time timers,
+    and against a wall clock for processing-time timers.
+    """
     expired = []
+    has_realtime_timer = False
     for window, timers in list(self.timers.items()):
       for (name, time_domain), timestamp in list(timers.items()):
-        if timestamp <= watermark:
+        if time_domain == TimeDomain.REAL_TIME:
+          time_marker = processing_time
+          has_realtime_timer = True
+        elif time_domain == TimeDomain.WATERMARK:
+          time_marker = watermark
+        else:
+          logging.error(
+              'TimeDomain error: No timers defined for time domain %s.',
+              time_domain)
+        if timestamp <= time_marker:
           expired.append((window, (name, time_domain, timestamp)))
           if clear:
             del timers[(name, time_domain)]
       if not timers and clear:
         del self.timers[window]
-    return expired
+    return expired, has_realtime_timer
 
   def get_and_clear_timers(self, watermark=MAX_TIMESTAMP):
-    return self.get_timers(clear=True, watermark=watermark)
+    return self.get_timers(clear=True, watermark=watermark)[0]
 
   def get_earliest_hold(self):
     earliest_hold = MAX_TIMESTAMP

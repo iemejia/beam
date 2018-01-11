@@ -23,36 +23,40 @@ import collections
 import random
 import time
 
+import apache_beam.io as io
 from apache_beam import coders
 from apache_beam import pvalue
 from apache_beam.internal import pickler
-import apache_beam.io as io
+from apache_beam.options.pipeline_options import TypeOptions
+from apache_beam.runners import common
 from apache_beam.runners.common import DoFnRunner
 from apache_beam.runners.common import DoFnState
-from apache_beam.runners.direct.direct_runner import _StreamingGroupByKeyOnly
+from apache_beam.runners.dataflow.native_io.iobase import _NativeWrite  # pylint: disable=protected-access
 from apache_beam.runners.direct.direct_runner import _StreamingGroupAlsoByWindow
-from apache_beam.runners.direct.watermark_manager import WatermarkManager
+from apache_beam.runners.direct.direct_runner import _StreamingGroupByKeyOnly
+from apache_beam.runners.direct.sdf_direct_runner import ProcessElements
+from apache_beam.runners.direct.sdf_direct_runner import ProcessFn
+from apache_beam.runners.direct.sdf_direct_runner import SDFProcessElementInvoker
 from apache_beam.runners.direct.util import KeyedWorkItem
 from apache_beam.runners.direct.util import TransformResult
-from apache_beam.runners.dataflow.native_io.iobase import _NativeWrite  # pylint: disable=protected-access
-from apache_beam.testing.test_stream import TestStream
+from apache_beam.runners.direct.watermark_manager import WatermarkManager
 from apache_beam.testing.test_stream import ElementEvent
-from apache_beam.testing.test_stream import WatermarkEvent
 from apache_beam.testing.test_stream import ProcessingTimeEvent
+from apache_beam.testing.test_stream import TestStream
+from apache_beam.testing.test_stream import WatermarkEvent
 from apache_beam.transforms import core
-from apache_beam.transforms.window import GlobalWindows
-from apache_beam.transforms.window import WindowedValue
-from apache_beam.transforms.trigger import create_trigger_driver
+from apache_beam.transforms.trigger import TimeDomain
 from apache_beam.transforms.trigger import _CombiningValueStateTag
 from apache_beam.transforms.trigger import _ListStateTag
-from apache_beam.transforms.trigger import TimeDomain
+from apache_beam.transforms.trigger import create_trigger_driver
+from apache_beam.transforms.window import GlobalWindows
+from apache_beam.transforms.window import WindowedValue
 from apache_beam.typehints.typecheck import OutputCheckWrapperDoFn
 from apache_beam.typehints.typecheck import TypeCheckError
 from apache_beam.typehints.typecheck import TypeCheckWrapperDoFn
 from apache_beam.utils import counters
-from apache_beam.utils.timestamp import Timestamp
 from apache_beam.utils.timestamp import MIN_TIMESTAMP
-from apache_beam.options.pipeline_options import TypeOptions
+from apache_beam.utils.timestamp import Timestamp
 
 
 class TransformEvaluatorRegistry(object):
@@ -74,6 +78,7 @@ class TransformEvaluatorRegistry(object):
         _StreamingGroupAlsoByWindow: _StreamingGroupAlsoByWindowEvaluator,
         _NativeWrite: _NativeWriteEvaluator,
         TestStream: _TestStreamEvaluator,
+        ProcessElements: _ProcessElementsEvaluator
     }
     self._root_bundle_providers = {
         core.PTransform: DefaultRootBundleProvider,
@@ -137,7 +142,7 @@ class TransformEvaluatorRegistry(object):
                       (core._GroupByKeyOnly,
                        _StreamingGroupByKeyOnly,
                        _StreamingGroupAlsoByWindow,
-                       _NativeWrite,))
+                       _NativeWrite))
 
 
 class RootBundleProvider(object):
@@ -191,8 +196,6 @@ class _TransformEvaluator(object):
     self._execution_context = evaluation_context.get_execution_context(
         applied_ptransform)
     self.scoped_metrics_container = scoped_metrics_container
-    with scoped_metrics_container:
-      self.start_bundle()
 
   def _expand_outputs(self):
     outputs = set()
@@ -302,8 +305,7 @@ class _BoundedReadEvaluator(_TransformEvaluator):
       with self._source.reader() as reader:
         bundles = _read_values_to_bundles(reader)
 
-    return TransformResult(
-        self._applied_ptransform, bundles, [], None, None)
+    return TransformResult(self, bundles, [], None, None)
 
 
 class _TestStreamEvaluator(_TransformEvaluator):
@@ -356,9 +358,9 @@ class _TestStreamEvaluator(_TransformEvaluator):
           self.current_index + 1, timestamp=self.watermark))
       unprocessed_bundles.append(unprocessed_bundle)
       hold = self.watermark
+
     return TransformResult(
-        self._applied_ptransform, self.bundles, unprocessed_bundles, None,
-        {None: hold})
+        self, self.bundles, unprocessed_bundles, None, {None: hold})
 
 
 class _PubSubSubscriptionWrapper(object):
@@ -442,9 +444,9 @@ class _PubSubReadEvaluator(_TransformEvaluator):
       input_pvalue = pvalue.PBegin(self._applied_ptransform.transform.pipeline)
     unprocessed_bundle = self._evaluation_context.create_bundle(
         input_pvalue)
-    return TransformResult(
-        self._applied_ptransform, bundles,
-        [unprocessed_bundle], None, {None: Timestamp.of(time.time())})
+
+    return TransformResult(self, bundles, [unprocessed_bundle], None,
+                           {None: Timestamp.of(time.time())})
 
 
 class _FlattenEvaluator(_TransformEvaluator):
@@ -467,8 +469,7 @@ class _FlattenEvaluator(_TransformEvaluator):
 
   def finish_bundle(self):
     bundles = [self.bundle]
-    return TransformResult(
-        self._applied_ptransform, bundles, [], None, None)
+    return TransformResult(self, bundles, [], None, None)
 
 
 class _TaggedReceivers(dict):
@@ -486,20 +487,20 @@ class _TaggedReceivers(dict):
             or self._evaluation_context.has_cache)
     return self._undeclared_in_memory_tag_values
 
-  class NullReceiver(object):
+  class NullReceiver(common.Receiver):
     """Ignores undeclared outputs, default execution mode."""
 
-    def output(self, element):
+    def receive(self, element):
       pass
 
-  class _InMemoryReceiver(object):
+  class _InMemoryReceiver(common.Receiver):
     """Buffers undeclared outputs to the given dictionary."""
 
     def __init__(self, target, tag):
       self._target = target
       self._tag = tag
 
-    def output(self, element):
+    def receive(self, element):
       self._target[self._tag].append(element)
 
   def __missing__(self, key):
@@ -517,6 +518,17 @@ class _TaggedReceivers(dict):
 
 class _ParDoEvaluator(_TransformEvaluator):
   """TransformEvaluator for ParDo transform."""
+
+  def __init__(self, evaluation_context, applied_ptransform,
+               input_committed_bundle, side_inputs, scoped_metrics_container,
+               perform_dofn_pickle_test=True):
+    super(_ParDoEvaluator, self).__init__(
+        evaluation_context, applied_ptransform, input_committed_bundle,
+        side_inputs, scoped_metrics_container)
+    # This is a workaround for SDF implementation. SDF implementation adds state
+    # to the SDF that is not picklable.
+    self._perform_dofn_pickle_test = perform_dofn_pickle_test
+
   def start_bundle(self):
     transform = self._applied_ptransform.transform
 
@@ -531,7 +543,8 @@ class _ParDoEvaluator(_TransformEvaluator):
     self._counter_factory = counters.CounterFactory()
 
     # TODO(aaltay): Consider storing the serialized form as an optimization.
-    dofn = pickler.loads(pickler.dumps(transform.dofn))
+    dofn = (pickler.loads(pickler.dumps(transform.dofn))
+            if self._perform_dofn_pickle_test else transform.dofn)
 
     pipeline_options = self._evaluation_context.pipeline_options
     if (pipeline_options is not None
@@ -539,8 +552,11 @@ class _ParDoEvaluator(_TransformEvaluator):
       dofn = TypeCheckWrapperDoFn(dofn, transform.get_type_hints())
 
     dofn = OutputCheckWrapperDoFn(dofn, self._applied_ptransform.full_label)
+    args = transform.args if hasattr(transform, 'args') else []
+    kwargs = transform.kwargs if hasattr(transform, 'kwargs') else {}
+
     self.runner = DoFnRunner(
-        dofn, transform.args, transform.kwargs,
+        dofn, args, kwargs,
         self._side_inputs,
         self._applied_ptransform.inputs[0].windowing,
         tagged_receivers=self._tagged_receivers,
@@ -557,7 +573,7 @@ class _ParDoEvaluator(_TransformEvaluator):
     bundles = self._tagged_receivers.values()
     result_counters = self._counter_factory.get_counters()
     return TransformResult(
-        self._applied_ptransform, bundles, [], result_counters, None,
+        self, bundles, [], result_counters, None,
         self._tagged_receivers.undeclared_in_memory_tag_values)
 
 
@@ -586,10 +602,13 @@ class _GroupByKeyOnlyEvaluator(_TransformEvaluator):
     assert len(self._outputs) == 1
     self.output_pcollection = list(self._outputs)[0]
 
-    # The input type of a GroupByKey will be KV[Any, Any] or more specific.
+    # The output type of a GroupByKey will be KV[Any, Any] or more specific.
+    # TODO(BEAM-2717): Infer coders earlier.
     kv_type_hint = (
-        self._applied_ptransform.transform.get_type_hints().input_types[0])
-    self.key_coder = coders.registry.get_coder(kv_type_hint[0].tuple_types[0])
+        self._applied_ptransform.outputs[None].element_type
+        or
+        self._applied_ptransform.transform.get_type_hints().input_types[0][0])
+    self.key_coder = coders.registry.get_coder(kv_type_hint.tuple_types[0])
 
   def process_timer(self, timer_firing):
     # We do not need to emit a KeyedWorkItem to process_element().
@@ -621,7 +640,7 @@ class _GroupByKeyOnlyEvaluator(_TransformEvaluator):
         gbk_result = []
         # TODO(ccy): perhaps we can clean this up to not use this
         # internal attribute of the DirectStepContext.
-        for encoded_k in self.step_context.keyed_existing_state:
+        for encoded_k in self.step_context.existing_keyed_state:
           # Ignore global state.
           if encoded_k is None:
             continue
@@ -647,8 +666,7 @@ class _GroupByKeyOnlyEvaluator(_TransformEvaluator):
       self.global_state.set_timer(
           None, '', TimeDomain.WATERMARK, WatermarkManager.WATERMARK_POS_INF)
 
-    return TransformResult(
-        self._applied_ptransform, bundles, [], None, {None: hold})
+    return TransformResult(self, bundles, [], None, {None: hold})
 
 
 class _StreamingGroupByKeyOnlyEvaluator(_TransformEvaluator):
@@ -701,8 +719,7 @@ class _StreamingGroupByKeyOnlyEvaluator(_TransformEvaluator):
       kwi = KeyedWorkItem(encoded_k, elements=vs)
       bundle.add(GlobalWindows.windowed_value(kwi))
 
-    return TransformResult(
-        self._applied_ptransform, bundles, [], None, None)
+    return TransformResult(self, bundles, [], None, None)
 
 
 class _StreamingGroupAlsoByWindowEvaluator(_TransformEvaluator):
@@ -762,8 +779,7 @@ class _StreamingGroupAlsoByWindowEvaluator(_TransformEvaluator):
         bundle.add(item)
       bundles.append(bundle)
 
-    return TransformResult(
-        self._applied_ptransform, bundles, [], None, self.keyed_holds)
+    return TransformResult(self, bundles, [], None, self.keyed_holds)
 
 
 class _NativeWriteEvaluator(_TransformEvaluator):
@@ -827,5 +843,81 @@ class _NativeWriteEvaluator(_TransformEvaluator):
       self.global_state.set_timer(
           None, '', TimeDomain.WATERMARK, WatermarkManager.WATERMARK_POS_INF)
 
-    return TransformResult(
-        self._applied_ptransform, [], [], None, {None: hold})
+    return TransformResult(self, [], [], None, {None: hold})
+
+
+class _ProcessElementsEvaluator(_TransformEvaluator):
+  """An evaluator for sdf_direct_runner.ProcessElements transform."""
+
+  # Maximum number of elements that will be produced by a Splittable DoFn before
+  # a checkpoint is requested by the runner.
+  DEFAULT_MAX_NUM_OUTPUTS = 100
+  # Maximum duration a Splittable DoFn will process an element before a
+  # checkpoint is requested by the runner.
+  DEFAULT_MAX_DURATION = 1
+
+  def __init__(self, evaluation_context, applied_ptransform,
+               input_committed_bundle, side_inputs, scoped_metrics_container):
+    super(_ProcessElementsEvaluator, self).__init__(
+        evaluation_context, applied_ptransform, input_committed_bundle,
+        side_inputs, scoped_metrics_container)
+
+    process_elements_transform = applied_ptransform.transform
+    assert isinstance(process_elements_transform, ProcessElements)
+
+    # Replacing the do_fn of the transform with a wrapper do_fn that performs
+    # SDF magic.
+    transform = applied_ptransform.transform
+    sdf = transform.sdf
+    self._process_fn = transform.new_process_fn(sdf)
+    transform.dofn = self._process_fn
+
+    assert isinstance(self._process_fn, ProcessFn)
+
+    self.step_context = self._execution_context.get_step_context()
+    self._process_fn.step_context = self.step_context
+
+    process_element_invoker = (
+        SDFProcessElementInvoker(
+            max_num_outputs=self.DEFAULT_MAX_NUM_OUTPUTS,
+            max_duration=self.DEFAULT_MAX_DURATION))
+    self._process_fn.set_process_element_invoker(process_element_invoker)
+
+    self._par_do_evaluator = _ParDoEvaluator(
+        evaluation_context, applied_ptransform, input_committed_bundle,
+        side_inputs, scoped_metrics_container, perform_dofn_pickle_test=False)
+    self.keyed_holds = {}
+
+  def start_bundle(self):
+    self._par_do_evaluator.start_bundle()
+
+  def process_element(self, element):
+    assert isinstance(element, WindowedValue)
+    assert len(element.windows) == 1
+    window = element.windows[0]
+    if isinstance(element.value, KeyedWorkItem):
+      key = element.value.encoded_key
+    else:
+      # If not a `KeyedWorkItem`, this must be a tuple where key is a randomly
+      # generated key and the value is a `WindowedValue` that contains an
+      # `ElementAndRestriction` object.
+      assert isinstance(element.value, tuple)
+      key = element.value[0]
+
+    self._par_do_evaluator.process_element(element)
+
+    state = self.step_context.get_keyed_state(key)
+    self.keyed_holds[key] = state.get_state(
+        window, self._process_fn.watermark_hold_tag)
+
+  def finish_bundle(self):
+    par_do_result = self._par_do_evaluator.finish_bundle()
+
+    transform_result = TransformResult(
+        self, par_do_result.uncommitted_output_bundles,
+        par_do_result.unprocessed_bundles, par_do_result.counters,
+        par_do_result.keyed_watermark_holds,
+        par_do_result.undeclared_tag_values)
+    for key in self.keyed_holds:
+      transform_result.keyed_watermark_holds[key] = self.keyed_holds[key]
+    return transform_result

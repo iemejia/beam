@@ -23,23 +23,24 @@ import logging
 import os
 import pickle
 import random
+import re
 import shutil
 import tempfile
 import unittest
 
+import crcmod
+
 import apache_beam as beam
 from apache_beam import coders
 from apache_beam.io.filesystem import CompressionTypes
+from apache_beam.io.tfrecordio import ReadFromTFRecord
+from apache_beam.io.tfrecordio import WriteToTFRecord
 from apache_beam.io.tfrecordio import _TFRecordSink
 from apache_beam.io.tfrecordio import _TFRecordSource
 from apache_beam.io.tfrecordio import _TFRecordUtil
-from apache_beam.io.tfrecordio import ReadFromTFRecord
-from apache_beam.io.tfrecordio import WriteToTFRecord
 from apache_beam.testing.test_pipeline import TestPipeline
 from apache_beam.testing.util import assert_that
 from apache_beam.testing.util import equal_to
-import crcmod
-
 
 try:
   import tensorflow as tf  # pylint: disable=import-error
@@ -79,9 +80,8 @@ class TestTFRecordUtil(unittest.TestCase):
     return ''.join(l)
 
   def _test_error(self, record, error_text):
-    with self.assertRaises(ValueError) as context:
+    with self.assertRaisesRegexp(ValueError, re.escape(error_text)):
       _TFRecordUtil.read_record(self._as_file_handle(record))
-    self.assertIn(error_text, context.exception.message)
 
   def test_masked_crc32c(self):
     self.assertEqual(0xfd7fffa, _TFRecordUtil._masked_crc32c('\x00' * 32))

@@ -21,6 +21,8 @@ import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Iterables;
 import java.util.List;
 import java.util.Map;
+import javax.annotation.Nullable;
+import org.apache.beam.model.pipeline.v1.RunnerApi;
 import org.apache.beam.runners.core.construction.PTransformReplacements;
 import org.apache.beam.runners.core.construction.PTransformTranslation.RawPTransform;
 import org.apache.beam.runners.core.construction.ReplacementOutputs;
@@ -86,6 +88,12 @@ public class SplittableParDoViaKeyedWorkItems {
     @Override
     public String getUrn() {
       return SplittableParDo.SPLITTABLE_GBKIKWI_URN;
+    }
+
+    @Override
+    public RunnerApi.FunctionSpec getSpec() {
+      throw new UnsupportedOperationException(
+          String.format("%s should never be serialized to proto", getClass().getSimpleName()));
     }
   }
 
@@ -237,12 +245,13 @@ public class SplittableParDoViaKeyedWorkItems {
     private final Coder<RestrictionT> restrictionCoder;
     private final WindowingStrategy<InputT, ?> inputWindowingStrategy;
 
-    private transient StateInternalsFactory<String> stateInternalsFactory;
-    private transient TimerInternalsFactory<String> timerInternalsFactory;
-    private transient SplittableProcessElementInvoker<InputT, OutputT, RestrictionT, TrackerT>
+    private transient @Nullable StateInternalsFactory<String> stateInternalsFactory;
+    private transient @Nullable TimerInternalsFactory<String> timerInternalsFactory;
+    private transient @Nullable SplittableProcessElementInvoker<
+            InputT, OutputT, RestrictionT, TrackerT>
         processElementInvoker;
 
-    private transient DoFnInvoker<InputT, OutputT> invoker;
+    private transient @Nullable DoFnInvoker<InputT, OutputT> invoker;
 
     public ProcessFn(
         DoFn<InputT, OutputT> fn,
@@ -369,7 +378,7 @@ public class SplittableParDoViaKeyedWorkItems {
         return;
       }
       restrictionState.write(result.getResidualRestriction());
-      Instant futureOutputWatermark = result.getFutureOutputWatermark();
+      @Nullable Instant futureOutputWatermark = result.getFutureOutputWatermark();
       if (futureOutputWatermark == null) {
         futureOutputWatermark = elementAndRestriction.getKey().getTimestamp();
       }
