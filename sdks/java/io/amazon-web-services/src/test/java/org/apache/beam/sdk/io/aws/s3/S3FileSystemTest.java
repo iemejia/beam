@@ -33,6 +33,8 @@ import static org.mockito.Mockito.when;
 import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.model.AmazonS3Exception;
 import com.amazonaws.services.s3.model.CompleteMultipartUploadRequest;
+import com.amazonaws.services.s3.model.CopyObjectRequest;
+import com.amazonaws.services.s3.model.CopyObjectResult;
 import com.amazonaws.services.s3.model.CopyPartRequest;
 import com.amazonaws.services.s3.model.CopyPartResult;
 import com.amazonaws.services.s3.model.DeleteObjectsRequest;
@@ -100,6 +102,22 @@ public class S3FileSystemTest {
     AmazonS3 mockAmazonS3 = Mockito.mock(AmazonS3.class);
     s3FileSystem.setAmazonS3Client(mockAmazonS3);
 
+    // Test atomic copy
+    S3ResourceId smallSourcePath = S3ResourceId.fromUri("s3://bucket/small");
+    S3ResourceId smallDestinationPath = S3ResourceId.fromUri("s3://bucket/tosmall");
+
+    ObjectMetadata smallobjectMetadata = new ObjectMetadata();
+    smallobjectMetadata.setContentLength(0);
+    when(mockAmazonS3.getObjectMetadata(smallSourcePath.getBucket(), smallSourcePath.getKey()))
+        .thenReturn(smallobjectMetadata);
+
+    s3FileSystem.copy(smallSourcePath, smallDestinationPath);
+
+    CopyObjectResult copyObjectResult = new CopyObjectResult();
+    when(mockAmazonS3.copyObject(argThat(notNullValue(CopyObjectRequest.class))))
+        .thenReturn(copyObjectResult);
+
+    // Test multi-part copy
     S3ResourceId sourcePath = S3ResourceId.fromUri("s3://bucket/from");
     S3ResourceId destinationPath = S3ResourceId.fromUri("s3://bucket/to");
 
@@ -107,12 +125,11 @@ public class S3FileSystemTest {
         new InitiateMultipartUploadResult();
     initiateMultipartUploadResult.setUploadId("upload-id");
     when(mockAmazonS3.initiateMultipartUpload(
-        argThat(notNullValue(InitiateMultipartUploadRequest.class))))
+            argThat(notNullValue(InitiateMultipartUploadRequest.class))))
         .thenReturn(initiateMultipartUploadResult);
 
     ObjectMetadata sourceS3ObjectMetadata = new ObjectMetadata();
-    sourceS3ObjectMetadata
-        .setContentLength((long) (s3FileSystem.getS3UploadBufferSizeBytes() * 1.5));
+    sourceS3ObjectMetadata.setContentLength((long) 5 * 1024 * 1024 * 1024);
     sourceS3ObjectMetadata.setContentEncoding("read-seek-efficient");
     when(mockAmazonS3.getObjectMetadata(sourcePath.getBucket(), sourcePath.getKey()))
         .thenReturn(sourceS3ObjectMetadata);
