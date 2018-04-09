@@ -19,10 +19,9 @@ package org.apache.beam.sdk.io.range;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 
-import com.google.protobuf.ByteString;
-import com.google.protobuf.ByteString.ByteIterator;
 import java.io.Serializable;
 import java.nio.ByteBuffer;
+import java.util.Arrays;
 import javax.annotation.Nonnull;
 
 /**
@@ -49,7 +48,9 @@ public final class ByteKey implements Comparable<ByteKey>, Serializable {
    * ByteBuffer}.
    */
   public static ByteKey copyFrom(ByteBuffer value) {
-    return new ByteKey(ByteString.copyFrom(value));
+    byte[] arr = new byte[value.remaining()];
+    value.get(arr);
+    return new ByteKey(copy(arr));
   }
 
   /**
@@ -58,9 +59,14 @@ public final class ByteKey implements Comparable<ByteKey>, Serializable {
    * <p>Makes a copy of the underlying array.
    */
   public static ByteKey copyFrom(byte[] bytes) {
-    return new ByteKey(ByteString.copyFrom(bytes));
+    return new ByteKey(bytes);
   }
 
+  private static byte[] copy(byte[] bytes) {
+    byte[] result = new byte[bytes.length];
+    System.arraycopy(bytes, 0, result, 0, bytes.length);
+    return result;
+  }
   /**
    * Creates a new {@link ByteKey} backed by a copy of the specified {@code int[]}. This method is
    * primarily used as a convenience to create a {@link ByteKey} in code without casting down to
@@ -82,7 +88,7 @@ public final class ByteKey implements Comparable<ByteKey>, Serializable {
 
   /** Returns a read-only {@link ByteBuffer} representing this {@link ByteKey}. */
   public ByteBuffer getValue() {
-    return value.asReadOnlyByteBuffer();
+    return ByteBuffer.wrap(getBytes());
   }
 
   /**
@@ -91,12 +97,12 @@ public final class ByteKey implements Comparable<ByteKey>, Serializable {
    * <p>Copies the underlying {@code byte[]}.
    */
   public byte[] getBytes() {
-    return value.toByteArray();
+    return copy(value);
   }
 
   /** Returns {@code true} if the {@code byte[]} backing this {@link ByteKey} is of length 0. */
   public boolean isEmpty() {
-    return value.isEmpty();
+    return value.length == 0;
   }
 
   /**
@@ -107,25 +113,34 @@ public final class ByteKey implements Comparable<ByteKey>, Serializable {
   @Override
   public int compareTo(@Nonnull ByteKey other) {
     checkNotNull(other, "other");
-    ByteIterator thisIt = value.iterator();
-    ByteIterator otherIt = other.value.iterator();
-    while (thisIt.hasNext() && otherIt.hasNext()) {
-      // (byte & 0xff) converts [-128,127] bytes to [0,255] ints.
-      int cmp = (thisIt.nextByte() & 0xff) - (otherIt.nextByte() & 0xff);
-      if (cmp != 0) {
-        return cmp;
-      }
+    if (value.length == 0 || other.value.length == 0) {
+      return value.length - other.value.length;
     }
-    // If we get here, the prefix of both arrays is equal up to the shorter array. The array with
-    // more bytes is larger.
-    return value.size() - other.value.size();
+    if (value.length < other.value.length) {
+      return -1;
+    } else if (value.length > other.value.length) {
+      return 1;
+    } else {
+      byte[] l = this.getBytes();
+      byte[] r = other.getBytes();
+      for (int i = 0; i < value.length; i++) {
+        // (byte & 0xff) converts [-128,127] bytes to [0,255] ints.
+        int cmp = (l[i] & 0xff) - (r[i] & 0xff);
+        if (cmp != 0) {
+          return cmp;
+        }
+      }
+      // If we get here, the prefix of both arrays is equal up to the shorter array. The array with
+      // more bytes is larger.
+      return value.length - other.value.length;
+    }
   }
 
   ////////////////////////////////////////////////////////////////////////////////////
-  private final ByteString value;
+  private final byte[] value;
 
-  private ByteKey(ByteString value) {
-    this.value = value;
+  private ByteKey(byte[] value) {
+    this.value = copy(value);
   }
 
   /** Array used as a helper in {@link #toString}. */
@@ -135,12 +150,10 @@ public final class ByteKey implements Comparable<ByteKey>, Serializable {
   // Prints the key as a string "[deadbeef]".
   @Override
   public String toString() {
-    char[] encoded = new char[2 * value.size() + 2];
+    char[] encoded = new char[2 * value.length + 2];
     encoded[0] = '[';
     int cnt = 1;
-    ByteIterator iterator = value.iterator();
-    while (iterator.hasNext()) {
-      byte b = iterator.nextByte();
+    for (byte b : value) {
       encoded[cnt] = HEX[(b & 0xF0) >>> 4];
       ++cnt;
       encoded[cnt] = HEX[b & 0xF];
@@ -159,11 +172,11 @@ public final class ByteKey implements Comparable<ByteKey>, Serializable {
       return false;
     }
     ByteKey other = (ByteKey) o;
-    return (other.value.size() == value.size()) && this.compareTo(other) == 0;
+    return (other.value.length == value.length) && this.compareTo(other) == 0;
   }
 
   @Override
   public int hashCode() {
-    return value.hashCode();
+    return Arrays.hashCode(value);
   }
 }
