@@ -189,7 +189,7 @@ public class HBaseIOTest {
     final int numRows = 1001;
     createTable(table);
     writeData(table, numRows);
-    runReadTestLength(HBaseIO.read().withConfiguration(conf).withTableId(table), 1001);
+    runReadTestLength(HBaseIO.read().withConfiguration(conf).withTableId(table).withUseSdf(true), numRows);
   }
 
   /** Tests reading all rows from a split table. */

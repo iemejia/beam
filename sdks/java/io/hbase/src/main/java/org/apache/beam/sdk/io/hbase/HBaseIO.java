@@ -20,6 +20,7 @@ package org.apache.beam.sdk.io.hbase;
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
 
+import com.google.common.annotations.VisibleForTesting;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -29,12 +30,14 @@ import java.util.NoSuchElementException;
 import javax.annotation.Nullable;
 import org.apache.beam.sdk.annotations.Experimental;
 import org.apache.beam.sdk.coders.Coder;
+import org.apache.beam.sdk.coders.VoidCoder;
 import org.apache.beam.sdk.io.BoundedSource;
 import org.apache.beam.sdk.io.hadoop.SerializableConfiguration;
 import org.apache.beam.sdk.io.range.ByteKey;
 import org.apache.beam.sdk.io.range.ByteKeyRange;
 import org.apache.beam.sdk.io.range.ByteKeyRangeTracker;
 import org.apache.beam.sdk.options.PipelineOptions;
+import org.apache.beam.sdk.transforms.Create;
 import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.transforms.PTransform;
 import org.apache.beam.sdk.transforms.ParDo;
@@ -198,6 +201,13 @@ public class HBaseIO {
       return withKeyRange(keyRange);
     }
 
+    @VisibleForTesting
+    Read withUseSdf(boolean useSdf) {
+      Read read = new Read(serializableConfiguration, tableId, serializableScan);
+      read.useSDF = useSdf;
+      return read;
+    }
+
     private Read(
         SerializableConfiguration serializableConfiguration,
         String tableId,
@@ -219,6 +229,17 @@ public class HBaseIO {
       } catch (IOException e) {
         LOG.warn("Error checking whether table {} exists; proceeding.", tableId, e);
       }
+
+      if (useSDF) {
+        return input
+            .getPipeline()
+            .apply(Create.of((Void) null).withCoder(VoidCoder.of()))
+            .apply(
+                ParDo.of(
+                    new HBaseReadSplittableDoFn(
+                        serializableConfiguration, tableId, serializableScan)));
+      }
+
       return input
           .getPipeline()
           .apply(
@@ -252,6 +273,8 @@ public class HBaseIO {
     private final SerializableConfiguration serializableConfiguration;
     private final String tableId;
     private final SerializableScan serializableScan;
+    // Temporally disabled until the SDF based implmentation becomes the de-facto one.
+    private boolean useSDF = false;
   }
 
   static class HBaseSource extends BoundedSource<Result> {
