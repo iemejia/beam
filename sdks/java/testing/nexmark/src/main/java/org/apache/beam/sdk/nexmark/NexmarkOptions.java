@@ -458,4 +458,9 @@ public interface NexmarkOptions
   int getNexmarkParallel();
 
   void setNexmarkParallel(int value);
+
+  @Description("Use source API for synthetic generation.")
+  boolean getUseParDoGenerator();
+
+  void setUseParDoGenerator(boolean value);
 }
