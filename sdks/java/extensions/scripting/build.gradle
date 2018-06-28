@@ -26,7 +26,9 @@ dependencies {
   compile library.java.guava
   compileOnly library.java.findbugs_annotations
   testCompileOnly library.java.findbugs_annotations
+  shadow library.java.slf4j_api
   shadowTest project(path: ":beam-runners-direct-java", configuration: "shadow")
+  shadowTest 'org.python:jython:2.7.0'
   shadowTest library.java.hamcrest_core
   shadowTest library.java.hamcrest_library
   shadowTest library.java.junit

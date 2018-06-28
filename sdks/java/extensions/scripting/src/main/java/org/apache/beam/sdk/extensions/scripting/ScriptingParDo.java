@@ -23,11 +23,9 @@ import java.io.Serializable;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import javax.script.Bindings;
-import javax.script.Compilable;
 import javax.script.CompiledScript;
 import javax.script.ScriptContext;
 import javax.script.ScriptEngine;
-import javax.script.ScriptEngineManager;
 import javax.script.ScriptException;
 import javax.script.SimpleScriptContext;
 import org.apache.beam.sdk.annotations.Experimental;
@@ -45,6 +43,11 @@ import org.apache.beam.sdk.values.TypeDescriptor;
 /**
  * A transform to write simple ParDo transformations with a scripting language supported by Java
  * JSR-223.
+ *
+ * <p>Java scripting extensions allow to inject variables into the execution context of the script.
+ * For this transform we inject the following: ProcessContext, Element
+ *
+ * <p>One
  */
 @Experimental
 public abstract class ScriptingParDo<InputT, OutputT>
@@ -84,7 +87,7 @@ public abstract class ScriptingParDo<InputT, OutputT>
 
   @Override
   public PCollection<OutputT> expand(final PCollection<InputT> apCollection) {
-    if (language == null || script == null || script.get().isEmpty()) {
+    if (language == null || script == null || language.get().isEmpty() || script.get().isEmpty()) {
       throw new IllegalArgumentException("Language and Script must be set");
     }
     return apCollection.apply(ParDo.of(new ScriptingDoFn<>(language.get(), script.get())));
@@ -109,8 +112,8 @@ public abstract class ScriptingParDo<InputT, OutputT>
     private final String language;
     private final String script;
 
-    private volatile ScriptEngine engine;
-    private CompiledScript compiledScript;
+    private transient volatile ScriptEngine engine;
+    private transient CompiledScript compiledScript;
 
     ScriptingDoFn(final String language, final String script) {
       this.language = language;
@@ -119,47 +122,12 @@ public abstract class ScriptingParDo<InputT, OutputT>
 
     @Setup
     public void setup() {
-      final ScriptEngineManager manager =
-          new ScriptEngineManager(Thread.currentThread().getContextClassLoader());
-      engine = manager.getEngineByExtension(language);
-      if (engine == null) {
-        engine = manager.getEngineByName(language);
-        if (engine == null) {
-          engine = manager.getEngineByMimeType(language);
-        }
-      }
-      if (engine == null) {
-        throw new IllegalArgumentException(
-            "Language ["
-                + language
-                + "] "
-                + "not supported. Check that the needed depencencies are configured.");
-      }
-
-      if (Compilable.class.isInstance(engine)) {
-        try {
-          compiledScript = Compilable.class.cast(engine).compile(script);
-        } catch (ScriptException e) {
-          throw new IllegalStateException(e);
-        }
-      } else {
-        compiledScript =
-            new CompiledScript() {
-              @Override
-              public Object eval(final ScriptContext context) throws ScriptException {
-                return engine.eval(script, context);
-              }
-
-              @Override
-              public ScriptEngine getEngine() {
-                return engine;
-              }
-            };
-      }
+      engine = ScriptingUtils.getScriptingEngine(language);
+      compiledScript = ScriptingUtils.compileScript(engine, script);
     }
 
     @ProcessElement
-    public void processElement(final ProcessContext c) {
+    public void processElement(ProcessContext c) {
       final Bindings bindings = engine.createBindings();
       bindings.put("context", c);
 
@@ -169,7 +137,7 @@ public abstract class ScriptingParDo<InputT, OutputT>
       try {
         final Object eval = compiledScript.eval(scriptContext);
         if (eval != null) {
-          // if the script returns a value we put it in the context otherwise we asume the script
+          // if the script returns a value we put it in the context otherwise we assume the script
           // already did the output via context.output(...)
           c.output((OutputT) eval);
         }
@@ -180,7 +148,6 @@ public abstract class ScriptingParDo<InputT, OutputT>
 
     @Teardown
     public void tearDown() {
-      //TODO compiledScript != null
       if (AutoCloseable.class.isInstance(compiledScript)) {
         try {
           AutoCloseable.class.cast(compiledScript).close();

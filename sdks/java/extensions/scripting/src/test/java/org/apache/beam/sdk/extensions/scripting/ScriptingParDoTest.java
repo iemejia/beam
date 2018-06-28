@@ -17,30 +17,91 @@
  */
 package org.apache.beam.sdk.extensions.scripting;
 
-import static org.junit.Assert.assertEquals;
-
-import org.apache.beam.sdk.PipelineResult;
+import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.testing.PAssert;
 import org.apache.beam.sdk.testing.TestPipeline;
 import org.apache.beam.sdk.transforms.Create;
+import org.apache.beam.sdk.transforms.DoFn;
+import org.apache.beam.sdk.transforms.ParDo;
+import org.apache.beam.sdk.util.UserCodeException;
 import org.apache.beam.sdk.values.PCollection;
+import org.hamcrest.Matchers;
 import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.ExpectedException;
 
 /** Tests for the ScriptingParDo transform. */
 public class ScriptingParDoTest {
-  @Rule public volatile TestPipeline pipeline = TestPipeline.create();
+  @Rule public TestPipeline pipeline = TestPipeline.create();
+  @Rule public ExpectedException thrown = ExpectedException.none();
 
   @Test
-  public void testScriptingWithJs() {
-    final PCollection<Integer> out =
+  public void testJavascript() {
+    final PCollection<Double> out =
         pipeline
-            .apply(Create.of("v1", "v22"))
+            .apply(Create.of(1, 2, 3))
+            .apply(ParDo.of(new ToJsonFn()))
             .apply(
-                new ScriptingParDo<String, Integer>() {}.withLanguage("js")
-                    .withScript("context.output(context.element().length());"));
-    PAssert.that(out).containsInAnyOrder(2, 3);
-    final PipelineResult result = pipeline.run();
-    assertEquals(PipelineResult.State.DONE, result.waitUntilFinish());
+                new ScriptingParDo<String, Double>() {}.withLanguage("js")
+                    .withScript(
+                        "var value = JSON.parse(context.element());"
+                            + "var x = parseInt(value.id);"
+                            + "x * x;"));
+    PAssert.that(out).containsInAnyOrder(1d, 4d, 9d);
+    pipeline.run().waitUntilFinish();
+  }
+
+  @Test
+  public void testJython() {
+    final PCollection<Double> out =
+        pipeline
+            .apply(Create.of(1, 2, 3))
+            .apply(ParDo.of(new ToJsonFn()))
+            .apply(
+                new ScriptingParDo<String, Double>() {}.withLanguage("jython")
+                    .withScript(
+                        "import json\n"
+                            + "value = json.loads(context.element())\n"
+                            + "context.output(float(value['id'] * value['id']))"));
+    PAssert.that(out).containsInAnyOrder(1d, 4d, 9d);
+    pipeline.run().waitUntilFinish();
+  }
+
+  @Test
+  public void testJavascriptInvalidScript() {
+    final PCollection<Double> out =
+        pipeline
+            .apply(Create.of(1, 2, 3))
+            .apply(ParDo.of(new ToJsonFn()))
+            .apply(
+                new ScriptingParDo<String, Double>() {}.withLanguage("js")
+                    .withScript("var x = parseInt(value.id);" + "x * x;"));
+    thrown.expect(Pipeline.PipelineExecutionException.class);
+    thrown.expectCause(Matchers.instanceOf(IllegalStateException.class));
+    thrown.expectMessage("ReferenceError: \"value\" is not defined in <eval> at line number 1");
+    pipeline.run().waitUntilFinish();
+  }
+
+  @Test
+  public void testUnavailableLanguage() {
+    final PCollection<Double> out =
+        pipeline
+            .apply(Create.of(1, 2, 3))
+            .apply(ParDo.of(new ToJsonFn()))
+            .apply(
+                new ScriptingParDo<String, Double>() {}.withLanguage("ocaml")
+                    .withScript("let square = x * x\n" + "square"));
+    //    thrown.expect(Pipeline.PipelineExecutionException.class);
+    //    thrown.expectCause(Matchers.instanceOf(IllegalArgumentException.class));
+    //    thrown.expectCause(Matchers.instanceOf(UserCodeException.class));
+    pipeline.run().waitUntilFinish();
+  }
+
+  private static class ToJsonFn extends DoFn<Integer, String> {
+    @ProcessElement
+    public void processElement(ProcessContext c) {
+      c.output(
+          String.format("{\"id\": " + c.element() + ", \"name\": \"person" + c.element() + "\"}"));
+    }
   }
 }
