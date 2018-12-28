@@ -284,7 +284,7 @@ public class HBaseIO {
       this.serializableConfiguration = serializableConfiguration;
     }
 
-    /** Reads from the HBase instance indicated by the* given configuration. */
+    /** Reads from the HBase instance indicated by the given configuration. */
     public ReadAll withConfiguration(Configuration configuration) {
       checkArgument(configuration != null, "configuration can not be null");
       return new ReadAll(new SerializableConfiguration(configuration));

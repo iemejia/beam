@@ -269,6 +269,16 @@ public class KafkaIO {
         .build();
   }
 
+  //  /**
+  //   * A {@link PTransform} that works like {@link #read}, but executes read operations coming from a
+  //   * {@link PCollection} of {@link String}.
+  //   */
+  //  public static <K, V> ReadAll<K, V> readAll() {
+  //    //TODO ReadAll
+  ////    return new ReadAll(null);
+  //    return null;
+  //  }
+
   /**
    * Creates an uninitialized {@link Write} {@link PTransform}. Before use, Kafka configuration
    * should be set with {@link Write#withBootstrapServers(String)} and {@link Write#withTopic} along
@@ -301,7 +311,6 @@ public class KafkaIO {
   }
 
   ///////////////////////// Read Support \\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
-
   /**
    * A {@link PTransform} to read from Kafka topics. See {@link KafkaIO} for more information on
    * usage and configuration.
@@ -734,6 +743,22 @@ public class KafkaIO {
 
       return input.getPipeline().apply(transform);
     }
+
+    //
+    //    /** Implementation of {@link #readAll}. */
+    //    public static class ReadAll<K, V>
+    //            extends PTransform<PCollection<KafkaQuery>, PCollection<KafkaRecord<K, V>>> {
+    //
+    //      public ReadAll(Object o) {
+    //
+    //      }
+    //
+    //      @Override
+    //      public PCollection<KafkaRecord<K, V>> expand(PCollection<KafkaQuery> input) {
+    ////      checkArgument(serializableConfiguration != null, "withConfiguration() is required");
+    //        return input.apply(ParDo.of(new KafkaReadSplittableDoFn(null)));
+    //      }
+    //    }
 
     /**
      * Creates an {@link UnboundedSource UnboundedSource&lt;KafkaRecord&lt;K, V&gt;, ?&gt;} with the

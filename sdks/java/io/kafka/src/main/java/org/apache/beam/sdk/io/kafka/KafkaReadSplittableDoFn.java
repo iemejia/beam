@@ -17,5 +17,58 @@
  */
 package org.apache.beam.sdk.io.kafka;
 
-public class KafkaReadSplittableDoFn {
+import org.apache.beam.sdk.transforms.DoFn;
+import org.apache.beam.sdk.transforms.DoFn.UnboundedPerElement;
+
+/** A SplittableDoFn to read from HBase. */
+@UnboundedPerElement
+class KafkaReadSplittableDoFn<K, V> extends DoFn<KafkaQuery, KafkaRecord<K, V>> {
+  //    serializableConfiguration
+  public KafkaReadSplittableDoFn(String bootstrapServers) {
+    //    withBootstrapServers -> updateConsumerProperties
+  }
+
+  @Setup
+  public void setup() throws Exception {
+    //        connection = ConnectionFactory.createConnection(serializableConfiguration.get());
+  }
+
+  @ProcessElement
+  public void processElement(ProcessContext c) {
+    // , RestrictionTracker<ByteKeyRange, ByteKey> tracker) {
+  }
+
+  //    @GetInitialRestriction
+  //    public ByteKeyRange getInitialRestriction(HBaseQuery query) {
+  //        return ByteKeyRange.of(
+  //                ByteKey.copyFrom(query.getScan().getStartRow()),
+  //                ByteKey.copyFrom(query.getScan().getStopRow()));
+  //    }
+  //
+  //    @SplitRestriction
+  //    public void splitRestriction(
+  //            HBaseQuery query, ByteKeyRange range, Backlog backlog, OutputReceiver<ByteKeyRange>
+  // receiver)
+  //            throws Exception {
+  //        List<HRegionLocation> regionLocations =
+  //                HBaseUtils.getRegionLocations(connection, query.getTableId(), query.getScan());
+  //        List<ByteKeyRange> splitRanges =
+  //                HBaseUtils.getRanges(regionLocations, query.getTableId(), query.getScan());
+  //        for (ByteKeyRange splitRange : splitRanges) {
+  //            receiver.output(ByteKeyRange.of(splitRange.getStartKey(), splitRange.getEndKey()));
+  //        }
+  //    }
+  //
+  //    @NewTracker
+  //    public ByteKeyRangeTracker newTracker(ByteKeyRange range) {
+  //        return ByteKeyRangeTracker.of(range);
+  //    }
+  //
+  @Teardown
+  public void tearDown() throws Exception {
+    //        if (connection != null) {
+    //            connection.close();
+    //            connection = null;
+    //        }
+  }
 }
