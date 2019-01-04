@@ -23,7 +23,10 @@ import org.apache.beam.sdk.util.WindowedValue;
 import org.apache.beam.sdk.values.PValue;
 import org.apache.kafka.streams.kstream.KStream;
 
-/** Kafka Streams translator for the Beam {@link Flatten} primitive. */
+/**
+ * Kafka Streams translator for the Beam {@link Flatten} primitive. Uses {@link
+ * KStream#merge(KStream)} to combine multiple KStreams into one.
+ */
 public class FlattenTransformTranslator<T> implements TransformTranslator<Flatten.PCollections<T>> {
 
   @Override

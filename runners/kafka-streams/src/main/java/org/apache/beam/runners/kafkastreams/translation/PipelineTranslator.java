@@ -45,6 +45,7 @@ import org.apache.kafka.streams.kstream.KStream;
  * Translates a {@link Pipeline} into a {@link StreamsBuilder} so it can be run in a {@link
  * KafkaStreams} instance.
  */
+@SuppressWarnings("deprecation")
 public class PipelineTranslator extends Pipeline.PipelineVisitor.Defaults {
 
   public static PipelineTranslator of(

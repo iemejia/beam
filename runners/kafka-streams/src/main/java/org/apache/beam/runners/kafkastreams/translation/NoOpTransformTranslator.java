@@ -17,13 +17,21 @@
  */
 package org.apache.beam.runners.kafkastreams.translation;
 
+import org.apache.beam.runners.kafkastreams.KafkaStreamsRunner;
 import org.apache.beam.sdk.transforms.PTransform;
+import org.apache.beam.sdk.transforms.Reshuffle;
+import org.apache.beam.sdk.transforms.View.CreatePCollectionView;
 import org.apache.beam.sdk.values.PInput;
 import org.apache.beam.sdk.values.POutput;
 import org.apache.beam.sdk.values.PValue;
 import org.slf4j.LoggerFactory;
 
-/** Kafka Streams translator that does nothing but add the input stream as the output stream. */
+/**
+ * Kafka Streams translator that does nothing but add the input stream as the output stream.
+ * Currently the {@link KafkaStreamsRunner} does not perform any actions for a {@link
+ * CreatePCollectionView} or a {@link Reshuffle}.
+ */
+@SuppressWarnings("deprecation")
 public class NoOpTransformTranslator<T extends PInput & POutput & PValue>
     implements TransformTranslator<PTransform<T, T>> {
 

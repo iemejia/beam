@@ -63,20 +63,30 @@ import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.common.utils.Bytes;
 import org.apache.kafka.streams.Consumed;
 import org.apache.kafka.streams.KeyValue;
+import org.apache.kafka.streams.kstream.GlobalKTable;
 import org.apache.kafka.streams.kstream.KStream;
 import org.apache.kafka.streams.kstream.Materialized;
 import org.apache.kafka.streams.kstream.Predicate;
 import org.apache.kafka.streams.kstream.Produced;
 import org.apache.kafka.streams.kstream.Transformer;
+import org.apache.kafka.streams.kstream.TransformerSupplier;
 import org.apache.kafka.streams.processor.ProcessorContext;
 import org.apache.kafka.streams.processor.PunctuationType;
 import org.apache.kafka.streams.processor.Punctuator;
+import org.apache.kafka.streams.processor.StateStore;
 import org.apache.kafka.streams.state.KeyValueStore;
 import org.apache.kafka.streams.state.StoreBuilder;
 import org.apache.kafka.streams.state.Stores;
 import org.slf4j.LoggerFactory;
 
-/** Kafka Streams translator for the Beam {@link ParDo} primitive. */
+/**
+ * Kafka Streams translator for the Beam {@link ParDo} primitive. Uses {@link
+ * KStream#transform(TransformerSupplier, String[])} to create {@link TupleTag TupleTagged} outputs,
+ * then uses {@link KStream#branch(Predicate[])} to create a {@link KStream} for each output {@link
+ * TupleTag}. Creates a {@link StateStore} for each {@link StateSpec} in the {@link DoFn DoFn's}
+ * stateDeclarations. Creates a {@link GlobalKTable} for each side input, backed by a {@link
+ * StateStore} that readable by the {@link KSideInputReader}.
+ */
 public class ParDoTransformTranslator<InputT, OutputT>
     implements TransformTranslator<ParDo.MultiOutput<InputT, OutputT>> {
 
@@ -105,6 +115,7 @@ public class ParDoTransformTranslator<InputT, OutputT>
 
       Map<PCollectionView<?>, KSideInput> preparedSideInputs =
           prepareSideInputs(pipelineTranslator, sideInputs);
+      // TODO: Add the storeNames from the KSideInputs to the list created in prepareStateStores.
       KStream<TupleTag<?>, WindowedValue<?>> taggedOutputStream =
           inputStream.transform(
               () ->
@@ -342,7 +353,7 @@ public class ParDoTransformTranslator<InputT, OutputT>
 
       @Override
       public void punctuate(long timestamp) {
-        // TODO: Expired triggers.
+        // TODO: Fire expired timers.
         doFnRunner.finishBundle();
         doFnRunner.startBundle();
       }

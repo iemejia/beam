@@ -51,9 +51,16 @@ import org.apache.kafka.streams.kstream.KStream;
 import org.apache.kafka.streams.kstream.Produced;
 import org.apache.kafka.streams.kstream.Transformer;
 import org.apache.kafka.streams.processor.ProcessorContext;
+import org.apache.kafka.streams.processor.Punctuator;
+import org.apache.kafka.streams.processor.StateStore;
 import org.slf4j.LoggerFactory;
 
-/** Kafka Streams translator for the Beam {@link GroupByKey} primitive. */
+/**
+ * Kafka Streams translator for the Beam {@link GroupByKey} primitive. Uses {@link
+ * KStream#through(String, Produced)} to groupByKeyOnly, then uses the GroupAlsoByWindow {@link
+ * Transformer} to groupAlsoByWindow, utilizing a {@link StateStore} for holding aggregated data for
+ * the key and a {@link Punctuator} for identifying when triggers are ready.
+ */
 public class GroupByKeyTransformTranslator<K, V, W extends BoundedWindow>
     implements TransformTranslator<GroupByKey<K, V>> {
 
@@ -83,6 +90,7 @@ public class GroupByKeyTransformTranslator<K, V, W extends BoundedWindow>
                         value.getWindows(),
                         value.getPane())));
 
+    // TODO: Create through topic.
     KStream<K, WindowedValue<V>> groupByKeyOnlyStream =
         keyStream.through(
             Admin.topic(pipelineTranslator.getCurrentTransform()),
@@ -108,6 +116,7 @@ public class GroupByKeyTransformTranslator<K, V, W extends BoundedWindow>
               return keyedWorkItems;
             });
 
+    // TODO: Create StateStore for use in the GroupAlsoByWindow.
     KStream<Object, WindowedValue<KV<K, Iterable<V>>>> groupAlsoByWindow =
         groupByKeyKeyedWorkItemStream.transform(
             () -> new GroupAlsoByWindow(keyCoder, valueCoder, outputTag, windowingStrategy));

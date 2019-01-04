@@ -25,10 +25,15 @@ import org.apache.beam.sdk.transforms.windowing.WindowFn;
 import org.apache.beam.sdk.util.WindowedValue;
 import org.apache.beam.sdk.values.PValue;
 import org.apache.kafka.streams.kstream.KStream;
+import org.apache.kafka.streams.kstream.ValueMapper;
 import org.joda.time.Instant;
 import org.slf4j.LoggerFactory;
 
-/** Kafka Streams translator for the Beam {@link Window} primitive. */
+/**
+ * Kafka Streams translator for the Beam {@link Window} primitive. Uses {@link
+ * KStream#flatMapValues(ValueMapper)} and the {@link WindowFn} to {@link
+ * WindowFn#assignWindows(WindowFn.AssignContext)} to the new {@link WindowedValue WindowedValues}.
+ */
 public class WindowTransformTranslator<T, W extends BoundedWindow>
     implements TransformTranslator<Window.Assign<T>> {
 

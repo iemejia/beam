@@ -50,6 +50,7 @@ import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.common.utils.Bytes;
 import org.apache.kafka.streams.Consumed;
 import org.apache.kafka.streams.KeyValue;
+import org.apache.kafka.streams.StreamsBuilder;
 import org.apache.kafka.streams.StreamsConfig;
 import org.apache.kafka.streams.Topology;
 import org.apache.kafka.streams.kstream.KStream;
@@ -57,11 +58,20 @@ import org.apache.kafka.streams.kstream.Predicate;
 import org.apache.kafka.streams.kstream.Printed;
 import org.apache.kafka.streams.kstream.Produced;
 import org.apache.kafka.streams.kstream.Transformer;
+import org.apache.kafka.streams.kstream.TransformerSupplier;
 import org.apache.kafka.streams.processor.ProcessorContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-/** Kafka Streams translator for the Beam {@link Read} primitive. */
+/**
+ * Kafka Streams translator for the Beam {@link Read} primitive. Creates a topic (if this is the
+ * first instance of the Kafka Streams application to run) for UnboundedSources and splits the
+ * {@link UnboundedSource} so there is one per partition. Uses {@link StreamsBuilder#stream(String,
+ * Consumed)} along with {@link KStream#transform(TransformerSupplier, String...)} to open and read
+ * from an {@link UnboundedReader} starting at its {@link UnboundedSource.CheckpointMark}. After
+ * reading records the UnboundedSource is written back to the UnboundedSources topic with its latest
+ * CheckpointMark.
+ */
 public class ReadTransformTranslator<
         OutputT, CheckpointMarkT extends UnboundedSource.CheckpointMark>
     implements TransformTranslator<PTransform<PBegin, PCollection<OutputT>>> {
