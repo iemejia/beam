@@ -22,7 +22,9 @@ import static com.google.common.base.Preconditions.checkNotNull;
 import com.google.auto.value.AutoValue;
 import com.google.common.base.Strings;
 import com.google.common.collect.ImmutableList;
+import com.microsoft.azure.datalake.store.ADLFileOutputStream;
 import com.microsoft.azure.datalake.store.ADLStoreClient;
+import com.microsoft.azure.datalake.store.IfExists;
 import com.microsoft.azure.datalake.store.oauth2.AccessTokenProvider;
 import com.microsoft.azure.datalake.store.oauth2.ClientCredsTokenProvider;
 import java.io.IOException;
@@ -73,6 +75,8 @@ public class AdlFileSystem extends FileSystem<AdlResourceId> {
                                     options.getAadClientSecret());
     System.out.println("created access token provider");
 
+    ADLFileOutputStream writeStream = adlStoreClient.createFile("newfile", IfExists.FAIL);
+    writeStream.setBufferSize();
     adlStoreClient = ADLStoreClient
             .createClient(new URI(options.getAdlInputURI()).getHost(), provider);
     System.out.println("created client");

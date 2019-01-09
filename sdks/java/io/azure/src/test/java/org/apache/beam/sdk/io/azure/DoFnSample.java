@@ -42,9 +42,7 @@ public class DoFnSample {
   public static void main(String[] args) {
     PipelineOptions options = PipelineOptionsFactory.fromArgs(args).withValidation().create();
     Pipeline pipeline = Pipeline.create(options);
-    List<String> data = new ArrayList();
-    data.add("filename");
-    pipeline.apply(Create.of(data))
+    pipeline.apply(Create.of("filename"))
         .apply("Read from Azure", ParDo.of(new DoFn<String, String>() {
 
           // AzureClient
@@ -74,6 +72,7 @@ public class DoFnSample {
 
         }))
         .apply("Display Lines", ParDo.of(new DoFn<String, Void>() {
+          @ProcessElement
           public void processElement(ProcessContext processContext) throws Exception {
             String element = processContext.element();
             System.out.println(element);
