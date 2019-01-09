@@ -83,7 +83,9 @@ public class OffsetRangeTracker extends RestrictionTracker<OffsetRange, Long>
   @Override
   public void checkDone() throws IllegalStateException {
     checkState(
-        lastAttemptedOffset >= range.getTo() - 1,
+        lastAttemptedOffset != null, "Can't check if done before any offset claim was attempted");
+    checkState(
+        lastAttemptedOffset == Long.MAX_VALUE || lastAttemptedOffset + 1 >= range.getTo(),
         "Last attempted offset was %s in range %s, claiming work in [%s, %s) was not attempted",
         lastAttemptedOffset,
         range,

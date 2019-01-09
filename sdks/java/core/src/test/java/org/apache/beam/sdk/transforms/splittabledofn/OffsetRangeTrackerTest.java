@@ -186,4 +186,11 @@ public class OffsetRangeTrackerTest {
     tracker.tryClaim(150L);
     assertEquals(BigDecimal.valueOf(50), tracker.getBacklog().backlog());
   }
+
+  @Test
+  public void testCheckDoneUnstarted() {
+    OffsetRangeTracker tracker = new OffsetRangeTracker(new OffsetRange(100, 200));
+    expected.expect(IllegalStateException.class);
+    tracker.checkDone();
+  }
 }
