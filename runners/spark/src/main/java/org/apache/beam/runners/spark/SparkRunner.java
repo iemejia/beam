@@ -54,6 +54,7 @@ import org.apache.beam.sdk.runners.AppliedPTransform;
 import org.apache.beam.sdk.runners.TransformHierarchy;
 import org.apache.beam.sdk.transforms.Combine;
 import org.apache.beam.sdk.transforms.PTransform;
+import org.apache.beam.sdk.util.common.ReflectHelpers;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.PCollectionView;
 import org.apache.beam.sdk.values.PInput;
@@ -127,6 +128,8 @@ public final class SparkRunner extends PipelineRunner<SparkPipelineResult> {
     if (sparkOptions.getFilesToStage() == null) {
       sparkOptions.setFilesToStage(detectClassPathResourcesToStage(
           SparkRunner.class.getClassLoader()));
+      // TODO Romain suggested ReflectHelpers.findClassLoader()
+
       LOG.info("PipelineOptions.filesToStage was not specified. "
               + "Defaulting to files from the classpath: will stage {} files. "
               + "Enable logging at DEBUG level to see which files will be staged.",

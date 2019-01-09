@@ -37,6 +37,7 @@ public class PipelineResources {
    * @return A list of absolute paths to the resources the class loader uses.
    */
   public static List<String> detectClassPathResourcesToStage(ClassLoader classLoader) {
+    //TODO this is not java 9 compatible
     if (!(classLoader instanceof URLClassLoader)) {
       String message = String.format("Unable to use ClassLoader to detect classpath elements. "
           + "Current ClassLoader is %s, only URLClassLoaders are supported.", classLoader);
