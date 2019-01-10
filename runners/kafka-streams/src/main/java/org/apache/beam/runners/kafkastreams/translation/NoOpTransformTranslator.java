@@ -19,24 +19,19 @@ package org.apache.beam.runners.kafkastreams.translation;
 
 import org.apache.beam.runners.kafkastreams.KafkaStreamsRunner;
 import org.apache.beam.sdk.transforms.PTransform;
-import org.apache.beam.sdk.transforms.Reshuffle;
-import org.apache.beam.sdk.transforms.View.CreatePCollectionView;
-import org.apache.beam.sdk.values.PInput;
-import org.apache.beam.sdk.values.POutput;
 import org.apache.beam.sdk.values.PValue;
 import org.slf4j.LoggerFactory;
 
 /**
  * Kafka Streams translator that does nothing but add the input stream as the output stream.
- * Currently the {@link KafkaStreamsRunner} does not perform any actions for a {@link
- * CreatePCollectionView} or a {@link Reshuffle}.
+ * Currently the {@link KafkaStreamsRunner} does not perform any actions for a CreatePCollectionView
+ * or a Reshuffle.
  */
-@SuppressWarnings("deprecation")
-public class NoOpTransformTranslator<T extends PInput & POutput & PValue>
-    implements TransformTranslator<PTransform<T, T>> {
+public class NoOpTransformTranslator implements TransformTranslator<PTransform<PValue, PValue>> {
 
   @Override
-  public void translate(PipelineTranslator pipelineTranslator, PTransform<T, T> transform) {
+  public void translate(
+      PipelineTranslator pipelineTranslator, PTransform<PValue, PValue> transform) {
     LoggerFactory.getLogger(getClass()).error("Translating NoOp {}", transform);
     pipelineTranslator.putStream(
         pipelineTranslator.getOutput(transform),

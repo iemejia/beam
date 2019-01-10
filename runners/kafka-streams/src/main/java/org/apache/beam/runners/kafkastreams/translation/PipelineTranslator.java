@@ -60,7 +60,7 @@ public class PipelineTranslator extends Pipeline.PipelineVisitor.Defaults {
     TRANSFORM_TRANSLATORS.put(
         PTransformTranslation.ASSIGN_WINDOWS_TRANSFORM_URN, new WindowTransformTranslator<>());
     TRANSFORM_TRANSLATORS.put(
-        PTransformTranslation.CREATE_VIEW_TRANSFORM_URN, new NoOpTransformTranslator<>());
+        PTransformTranslation.CREATE_VIEW_TRANSFORM_URN, new NoOpTransformTranslator());
     TRANSFORM_TRANSLATORS.put(
         PTransformTranslation.FLATTEN_TRANSFORM_URN, new FlattenTransformTranslator<>());
     TRANSFORM_TRANSLATORS.put(
@@ -69,7 +69,7 @@ public class PipelineTranslator extends Pipeline.PipelineVisitor.Defaults {
         PTransformTranslation.PAR_DO_TRANSFORM_URN, new ParDoTransformTranslator<>());
     TRANSFORM_TRANSLATORS.put(
         PTransformTranslation.READ_TRANSFORM_URN, new ReadTransformTranslator<>());
-    TRANSFORM_TRANSLATORS.put(PTransformTranslation.RESHUFFLE_URN, new NoOpTransformTranslator<>());
+    TRANSFORM_TRANSLATORS.put(PTransformTranslation.RESHUFFLE_URN, new NoOpTransformTranslator());
   }
 
   private final Pipeline pipeline;

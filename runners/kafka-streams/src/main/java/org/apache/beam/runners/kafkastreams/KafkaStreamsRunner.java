@@ -17,6 +17,7 @@
  */
 package org.apache.beam.runners.kafkastreams;
 
+import java.util.Properties;
 import org.apache.beam.runners.kafkastreams.translation.PipelineTranslator;
 import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.PipelineRunner;
@@ -24,7 +25,6 @@ import org.apache.beam.sdk.options.PipelineOptions;
 import org.apache.beam.sdk.options.PipelineOptionsValidator;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.StreamsBuilder;
-import org.apache.kafka.streams.StreamsConfig;
 import org.apache.kafka.streams.Topology;
 import org.slf4j.LoggerFactory;
 
@@ -50,8 +50,9 @@ public class KafkaStreamsRunner extends PipelineRunner<KafkaStreamsPipelineResul
     PipelineTranslator pipelineTranslator = PipelineTranslator.of(pipeline, pipelineOptions);
     Topology topology = pipelineTranslator.translate().build();
     LoggerFactory.getLogger(getClass()).error("Topology {}", topology.describe());
-    KafkaStreams kafkaStreams =
-        new KafkaStreams(topology, new StreamsConfig(pipelineOptions.getProperties()));
+    Properties properties = new Properties();
+    properties.putAll(pipelineOptions.getProperties());
+    KafkaStreams kafkaStreams = new KafkaStreams(topology, properties);
     return KafkaStreamsPipelineResult.of(kafkaStreams);
   }
 }

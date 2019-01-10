@@ -19,6 +19,7 @@ package org.apache.beam.runners.kafkastreams.state;
 
 import java.io.File;
 import java.util.Map;
+import org.apache.kafka.common.header.Headers;
 import org.apache.kafka.common.serialization.Serde;
 import org.apache.kafka.streams.StreamsMetrics;
 import org.apache.kafka.streams.processor.Cancellable;
@@ -28,6 +29,7 @@ import org.apache.kafka.streams.processor.Punctuator;
 import org.apache.kafka.streams.processor.StateRestoreCallback;
 import org.apache.kafka.streams.processor.StateStore;
 import org.apache.kafka.streams.processor.TaskId;
+import org.apache.kafka.streams.processor.To;
 
 /**
  * {@link ProcessorContext} that implements the {@link ProcessorContext#getStateStore(String)}
@@ -65,6 +67,11 @@ public class MockProcessorContext implements ProcessorContext {
   public void commit() {}
 
   @Override
+  public Headers headers() {
+    return null;
+  }
+
+  @Override
   public <K, V> void forward(K key, V value) {}
 
   @Override
@@ -72,6 +79,9 @@ public class MockProcessorContext implements ProcessorContext {
 
   @Override
   public <K, V> void forward(K key, V value, String childName) {}
+
+  @Override
+  public <K, V> void forward(K key, V value, To to) {}
 
   @Override
   public Serde<?> keySerde() {
@@ -94,13 +104,7 @@ public class MockProcessorContext implements ProcessorContext {
   }
 
   @Override
-  public void register(
-      StateStore store,
-      boolean loggingEnabledIsDeprecatedAndIgnored,
-      StateRestoreCallback stateRestoreCallback) {}
-
-  @Override
-  public void schedule(long interval) {}
+  public void register(StateStore store, StateRestoreCallback stateRestoreCallback) {}
 
   @Override
   public Cancellable schedule(long interval, PunctuationType type, Punctuator callback) {

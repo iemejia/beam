@@ -51,6 +51,7 @@ import org.apache.kafka.streams.kstream.KStream;
 import org.apache.kafka.streams.kstream.Produced;
 import org.apache.kafka.streams.kstream.Transformer;
 import org.apache.kafka.streams.processor.ProcessorContext;
+import org.apache.kafka.streams.processor.PunctuationType;
 import org.apache.kafka.streams.processor.Punctuator;
 import org.apache.kafka.streams.processor.StateStore;
 import org.slf4j.LoggerFactory;
@@ -134,7 +135,7 @@ public class GroupByKeyTransformTranslator<K, V, W extends BoundedWindow>
     private final TupleTag<KV<K, Iterable<V>>> mainOutputTag;
     private final WindowingStrategy<?, W> windowingStrategy;
 
-    private ProcessorContext context;
+    private ProcessorContext processorContext;
     private InMemoryTimerInternals timerInternals;
     private DoFnRunner<KeyedWorkItem<K, V>, KV<K, Iterable<V>>> doFnRunner;
     private K key;
@@ -151,8 +152,10 @@ public class GroupByKeyTransformTranslator<K, V, W extends BoundedWindow>
     }
 
     @Override
-    public void init(ProcessorContext context) {
-      this.context = context;
+    public void init(ProcessorContext processorContext) {
+      this.processorContext = processorContext;
+      // TODO: Get punctuateInterval from pipelineOptions.
+      this.processorContext.schedule(1000, PunctuationType.WALL_CLOCK_TIME, new GABWPunctuator());
       this.timerInternals = new InMemoryTimerInternals();
 
       DoFnRunners.OutputManager outputManager = new GABWOutputManger();
@@ -160,7 +163,7 @@ public class GroupByKeyTransformTranslator<K, V, W extends BoundedWindow>
       DoFn<KeyedWorkItem<K, V>, KV<K, Iterable<V>>> doFn =
           GroupAlsoByWindowViaWindowSetNewDoFn.create(
               windowingStrategy,
-              key -> KStateInternals.of(key, context),
+              key -> KStateInternals.of(key, this.processorContext),
               key -> timerInternals,
               NullSideInputReader.empty(),
               reduceFn,
@@ -192,18 +195,21 @@ public class GroupByKeyTransformTranslator<K, V, W extends BoundedWindow>
     }
 
     @Override
-    public KeyValue<Object, WindowedValue<KV<K, Iterable<V>>>> punctuate(long timestamp) {
-      return null;
-    }
-
-    @Override
     public void close() {}
 
     private class GABWOutputManger implements DoFnRunners.OutputManager {
 
       @Override
       public <T> void output(TupleTag<T> tag, WindowedValue<T> output) {
-        context.forward(null, output);
+        processorContext.forward(null, output);
+      }
+    }
+
+    private class GABWPunctuator implements Punctuator {
+
+      @Override
+      public void punctuate(long timestamp) {
+        // TODO: Triggers.
       }
     }
 
@@ -211,7 +217,7 @@ public class GroupByKeyTransformTranslator<K, V, W extends BoundedWindow>
 
       @Override
       public StateInternals stateInternals() {
-        return KStateInternals.of(key, context);
+        return KStateInternals.of(key, processorContext);
       }
 
       @Override

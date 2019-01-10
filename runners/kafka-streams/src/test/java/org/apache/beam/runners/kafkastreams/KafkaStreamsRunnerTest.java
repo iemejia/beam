@@ -19,6 +19,7 @@ package org.apache.beam.runners.kafkastreams;
 
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -99,7 +100,7 @@ public class KafkaStreamsRunnerTest {
   }
 
   @Test
-  public void testRun() throws ExecutionException, InterruptedException, IOException {
+  public void testReadWrite() throws ExecutionException, InterruptedException, IOException {
     KafkaStreamsPipelineOptions pipelineOptions =
         PipelineOptionsFactory.create().as(KafkaStreamsPipelineOptions.class);
     pipelineOptions.setRunner(KafkaStreamsRunner.class);
@@ -113,6 +114,8 @@ public class KafkaStreamsRunnerTest {
                 .withTopic(topicOne)
                 .withKeyDeserializer(StringDeserializer.class)
                 .withValueDeserializer(IntegerDeserializer.class)
+                .updateConsumerProperties(
+                    Collections.singletonMap(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest"))
                 .withoutMetadata())
         .apply(
             KafkaIO.<String, Integer>write()

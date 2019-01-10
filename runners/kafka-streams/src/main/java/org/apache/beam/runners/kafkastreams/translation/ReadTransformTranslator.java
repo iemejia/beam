@@ -45,14 +45,13 @@ import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerRecord;
-import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.common.utils.Bytes;
-import org.apache.kafka.streams.Consumed;
 import org.apache.kafka.streams.KeyValue;
 import org.apache.kafka.streams.StreamsBuilder;
 import org.apache.kafka.streams.StreamsConfig;
 import org.apache.kafka.streams.Topology;
+import org.apache.kafka.streams.kstream.Consumed;
 import org.apache.kafka.streams.kstream.KStream;
 import org.apache.kafka.streams.kstream.Predicate;
 import org.apache.kafka.streams.kstream.Printed;
@@ -82,7 +81,6 @@ public class ReadTransformTranslator<
   @Override
   public void translate(
       PipelineTranslator pipelineTranslator, PTransform<PBegin, PCollection<OutputT>> transform) {
-    LoggerFactory.getLogger(getClass()).error("Translating Read {}", transform);
     KafkaStreamsPipelineOptions pipelineOptions = pipelineTranslator.getPipelineOptions();
     String topic = Admin.topic(pipelineTranslator.getCurrentTransform());
     UnboundedSource<OutputT, CheckpointMarkT> unboundedSource =
@@ -132,8 +130,7 @@ public class ReadTransformTranslator<
                 (KStream<?, ?>) readStreams[1];
     unboundedSourceStream.to(
         topic,
-        Produced.with(
-            Serdes.Integer(), CoderSerde.of(unboundedSourceCoder), (key, value, partition) -> key));
+        Produced.with(Serdes.Integer(), CoderSerde.of(unboundedSourceCoder), (t, k, v, p) -> k));
   }
 
   @SuppressWarnings("unchecked")
@@ -168,9 +165,7 @@ public class ReadTransformTranslator<
       String topic,
       UnboundedSource<OutputT, CheckpointMarkT> unboundedSource,
       Coder<KV<UnboundedSource<OutputT, CheckpointMarkT>, CheckpointMarkT>> unboundedSourceCoder) {
-    LOG.error("createTopicIfNeeded...");
     try (AdminClient adminClient = Admin.adminClient(pipelineOptions)) {
-      LOG.error("adminClient...");
       if (adminClient.listTopics().names().get().contains(topic)) {
         return;
       }
@@ -185,7 +180,6 @@ public class ReadTransformTranslator<
                           .shortValue())))
           .all()
           .get();
-      LOG.error("adminClientCreateTopics...");
     } catch (ExecutionException | InterruptedException e) {
       throw new RuntimeException(e);
     }
@@ -193,22 +187,12 @@ public class ReadTransformTranslator<
         producer =
             Admin.producer(
                 pipelineOptions, Serdes.Integer(), CoderSerde.of(unboundedSourceCoder))) {
-      LOG.error("producer...");
       List<? extends UnboundedSource<OutputT, CheckpointMarkT>> unboundedSources =
           unboundedSource.split(pipelineOptions.getNumPartitions(), pipelineOptions);
-      LOG.error(
-          "Split Unbounded Source {} into {} pieces.", unboundedSource, unboundedSources.size());
       for (int i = 0; i < unboundedSources.size(); i++) {
-        RecordMetadata metadata =
-            producer
-                .send(new ProducerRecord<>(topic, i, i, KV.of(unboundedSources.get(i), null)))
-                .get();
-        LOG.error(
-            "Produced {} to topic {}, partition {}, and offset {}.",
-            unboundedSources.get(i),
-            topic,
-            metadata.partition(),
-            metadata.offset());
+        producer
+            .send(new ProducerRecord<>(topic, i, i, KV.of(unboundedSources.get(i), null)))
+            .get();
       }
     } catch (Exception e) {
       throw new RuntimeException(e);
@@ -237,11 +221,6 @@ public class ReadTransformTranslator<
     @Override
     public KeyValue<Object, Object> transform(
         Integer key, KV<UnboundedSource<OutputT, CheckpointMarkT>, CheckpointMarkT> value) {
-      LOG.error("Transform...");
-      LOG.error(
-          "Transforming Unbounded Source {} with Checkpoint Mark {}",
-          value.getKey(),
-          value.getValue());
       UnboundedSource<OutputT, CheckpointMarkT> unboundedSource = value.getKey();
       CheckpointMarkT checkpointMark = value.getValue();
       try (UnboundedReader<OutputT> unboundedReader =
@@ -249,7 +228,6 @@ public class ReadTransformTranslator<
         boolean dataAvailable = unboundedReader.start();
         int batchSize = 0;
         while (dataAvailable && batchSize < 1000) {
-          LOG.error("Forwarding Current {}", unboundedReader.getCurrent());
           processorContext.forward(
               Bytes.wrap(unboundedReader.getCurrentRecordId()),
               WindowedValue.timestampedValueInGlobalWindow(
@@ -259,19 +237,10 @@ public class ReadTransformTranslator<
         }
         checkpointMark = (CheckpointMarkT) unboundedReader.getCheckpointMark();
         checkpointMark.finalizeCheckpoint();
-        LOG.error(
-            "Forwarding Unbounded Source {} with Checkpoint Mark {}.",
-            unboundedSource,
-            checkpointMark);
         return KeyValue.pair(key, KV.of(unboundedSource, checkpointMark));
       } catch (IOException e) {
         throw new RuntimeException(e);
       }
-    }
-
-    @Override
-    public KeyValue<Object, Object> punctuate(long timestamp) {
-      return null;
     }
 
     @Override

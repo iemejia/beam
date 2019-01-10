@@ -61,8 +61,8 @@ import org.apache.beam.sdk.values.WindowingStrategy;
 import org.apache.kafka.common.serialization.Serde;
 import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.common.utils.Bytes;
-import org.apache.kafka.streams.Consumed;
 import org.apache.kafka.streams.KeyValue;
+import org.apache.kafka.streams.kstream.Consumed;
 import org.apache.kafka.streams.kstream.GlobalKTable;
 import org.apache.kafka.streams.kstream.KStream;
 import org.apache.kafka.streams.kstream.Materialized;
@@ -273,7 +273,7 @@ public class ParDoTransformTranslator<InputT, OutputT>
     private final Map<TupleTag<?>, Coder<?>> outputCoders;
     private final WindowingStrategy<?, ?> windowingStrategy;
 
-    private ProcessorContext context;
+    private ProcessorContext processorContext;
     private InMemoryTimerInternals timerInternals;
     private DoFnInvoker<InputT, OutputT> doFnInvoker;
     private DoFnRunner<InputT, OutputT> doFnRunner;
@@ -299,15 +299,15 @@ public class ParDoTransformTranslator<InputT, OutputT>
     }
 
     @Override
-    public void init(ProcessorContext context) {
-      this.context = context;
+    public void init(ProcessorContext processorContext) {
+      this.processorContext = processorContext;
       this.timerInternals = new InMemoryTimerInternals();
       this.doFnInvoker = DoFnInvokers.invokerFor(doFn);
       this.doFnRunner =
           DoFnRunners.simpleRunner(
               pipelineOptions,
               doFn,
-              KSideInputReader.of(context, sideInputs),
+              KSideInputReader.of(processorContext, sideInputs),
               new ParDoOutputManager(),
               mainOutputTag,
               additionalOutputTags,
@@ -316,7 +316,7 @@ public class ParDoTransformTranslator<InputT, OutputT>
               outputCoders,
               windowingStrategy);
       // TODO: Get punctuateInterval from pipelineOptions.
-      context.schedule(0, PunctuationType.WALL_CLOCK_TIME, new ParDoPunctuator());
+      this.processorContext.schedule(1000, PunctuationType.WALL_CLOCK_TIME, new ParDoPunctuator());
       doFnInvoker.invokeSetup();
       doFnRunner.startBundle();
     }
@@ -331,11 +331,6 @@ public class ParDoTransformTranslator<InputT, OutputT>
     }
 
     @Override
-    public KeyValue<TupleTag<?>, WindowedValue<?>> punctuate(long timestamp) {
-      return null;
-    }
-
-    @Override
     public void close() {
       doFnRunner.finishBundle();
       doFnInvoker.invokeSetup();
@@ -345,7 +340,7 @@ public class ParDoTransformTranslator<InputT, OutputT>
 
       @Override
       public <T> void output(TupleTag<T> tag, WindowedValue<T> output) {
-        context.forward(tag, output);
+        processorContext.forward(tag, output);
       }
     }
 
@@ -363,7 +358,7 @@ public class ParDoTransformTranslator<InputT, OutputT>
 
       @Override
       public StateInternals stateInternals() {
-        return KStateInternals.of(input, context);
+        return KStateInternals.of(input, processorContext);
       }
 
       @Override
