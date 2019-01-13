@@ -23,6 +23,7 @@ import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
 import org.apache.beam.sdk.transforms.windowing.Window;
 import org.apache.beam.sdk.transforms.windowing.WindowFn;
 import org.apache.beam.sdk.util.WindowedValue;
+import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.PValue;
 import org.apache.kafka.streams.kstream.KStream;
 import org.apache.kafka.streams.kstream.ValueMapper;
@@ -60,7 +61,9 @@ public class WindowTransformTranslator<T, W extends BoundedWindow>
                 throw new RuntimeException(e);
               }
             });
-    pipelineTranslator.putStream(pipelineTranslator.getOutput(transform), windowedStream);
+    PCollection<T> output = pipelineTranslator.getOutput(transform);
+    pipelineTranslator.putStream(output, windowedStream);
+    pipelineTranslator.putStreamSources(output, pipelineTranslator.getStreamSources(input));
   }
 
   private class WindowAssignContext extends WindowFn<T, W>.AssignContext {
