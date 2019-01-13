@@ -36,6 +36,7 @@ public class KafkaStreamsRunner extends PipelineRunner<KafkaStreamsPipelineResul
 
   public static KafkaStreamsRunner fromOptions(PipelineOptions pipelineOptions) {
     PipelineOptionsValidator.validate(KafkaStreamsPipelineOptions.class, pipelineOptions);
+    pipelineOptions.setStableUniqueNames(PipelineOptions.CheckEnabled.ERROR);
     return new KafkaStreamsRunner(pipelineOptions);
   }
 

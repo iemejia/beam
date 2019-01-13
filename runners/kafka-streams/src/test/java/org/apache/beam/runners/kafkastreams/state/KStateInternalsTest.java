@@ -34,7 +34,7 @@ import org.junit.Test;
 /** JUnit Test for {@link KStateInternals}. */
 public class KStateInternalsTest {
 
-  private static final Integer KEY = 1;
+  private static final String KEY = "KEY";
   private static final String VALUE = "VALUE";
   private static final String BAG = "BAG";
   private static final String SET = "SET";
@@ -44,7 +44,7 @@ public class KStateInternalsTest {
   private static final String WATERMARK = "WATERMARK";
 
   private Map<String, StateStore> stateStores;
-  private KStateInternals<Integer> stateInternals;
+  private KStateInternals<String> stateInternals;
 
   @Before
   public void setUp() {
@@ -56,7 +56,7 @@ public class KStateInternalsTest {
     stateStores.put(COMBINING, new MockKeyValueStore<String, Map<String, Integer>>());
     stateStores.put(COMBINING_WITH_CONTEXT, new MockKeyValueStore<String, Map<String, Integer>>());
     stateStores.put(WATERMARK, new MockKeyValueStore<String, Map<String, Instant>>());
-    stateInternals = KStateInternals.of(KEY, new MockProcessorContext(stateStores));
+    stateInternals = KStateInternals.<String>of(new MockProcessorContext(stateStores)).withKey(KEY);
   }
 
   @Test

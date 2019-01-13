@@ -29,6 +29,7 @@ import org.apache.beam.runners.core.construction.TransformInputs;
 import org.apache.beam.runners.kafkastreams.KafkaStreamsPipelineOptions;
 import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.coders.Coder;
+import org.apache.beam.sdk.coders.CoderRegistry;
 import org.apache.beam.sdk.runners.AppliedPTransform;
 import org.apache.beam.sdk.runners.PTransformOverride;
 import org.apache.beam.sdk.runners.TransformHierarchy;
@@ -166,14 +167,6 @@ public class PipelineTranslator extends Pipeline.PipelineVisitor.Defaults {
             Collectors.toMap(e -> e.getKey(), e -> ((PCollection<?>) e.getValue()).getCoder()));
   }
 
-  KafkaStreamsPipelineOptions getPipelineOptions() {
-    return pipelineOptions;
-  }
-
-  StreamsBuilder getStreamsBuilder() {
-    return streamsBuilder;
-  }
-
   @SuppressWarnings("unchecked")
   <T> KStream<Object, WindowedValue<T>> getStream(PValue value) {
     return (KStream<Object, WindowedValue<T>>) streams.get(value);
@@ -181,5 +174,17 @@ public class PipelineTranslator extends Pipeline.PipelineVisitor.Defaults {
 
   void putStream(PValue value, KStream<?, ?> stream) {
     streams.put(value, stream);
+  }
+
+  CoderRegistry getCoderRegistry() {
+    return pipeline.getCoderRegistry();
+  }
+
+  KafkaStreamsPipelineOptions getPipelineOptions() {
+    return pipelineOptions;
+  }
+
+  StreamsBuilder getStreamsBuilder() {
+    return streamsBuilder;
   }
 }

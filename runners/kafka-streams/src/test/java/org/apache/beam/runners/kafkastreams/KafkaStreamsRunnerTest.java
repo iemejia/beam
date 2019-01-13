@@ -28,6 +28,10 @@ import java.util.concurrent.ExecutionException;
 import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.io.kafka.KafkaIO;
 import org.apache.beam.sdk.options.PipelineOptionsFactory;
+import org.apache.beam.sdk.transforms.Sum;
+import org.apache.beam.sdk.transforms.windowing.AfterProcessingTime;
+import org.apache.beam.sdk.transforms.windowing.Window;
+import org.apache.beam.sdk.values.KV;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.common.serialization.IntegerDeserializer;
 import org.apache.kafka.common.serialization.IntegerSerializer;
@@ -39,10 +43,12 @@ import org.apache.kafka.streams.StreamsConfig;
 import org.apache.kafka.streams.integration.utils.EmbeddedKafkaCluster;
 import org.apache.kafka.streams.integration.utils.IntegrationTestUtils;
 import org.apache.kafka.test.TestUtils;
+import org.joda.time.Duration;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.ClassRule;
 import org.junit.Test;
+import org.slf4j.LoggerFactory;
 
 /** JUnit Test for the {@link KafkaStreamsRunner}. */
 public class KafkaStreamsRunnerTest {
@@ -66,6 +72,7 @@ public class KafkaStreamsRunnerTest {
 
   @Before
   public void setUp() throws InterruptedException {
+    testNumber++;
     topicOne = TOPIC_ONE_PREFIX + testNumber;
     CLUSTER.createTopic(topicOne, PARTITIONS, REPLICAS);
     topicTwo = TOPIC_TWO_PREFIX + testNumber;
@@ -95,12 +102,12 @@ public class KafkaStreamsRunnerTest {
         "key.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");
     consumerConfiguration.put(
         "value.deserializer", "org.apache.kafka.common.serialization.IntegerDeserializer");
-
-    testNumber++;
   }
 
   @Test
   public void testReadWrite() throws ExecutionException, InterruptedException, IOException {
+    LoggerFactory.getLogger(KafkaStreamsRunnerTest.class)
+        .error("testReadWrite topicOne: {}", topicOne);
     KafkaStreamsPipelineOptions pipelineOptions =
         PipelineOptionsFactory.create().as(KafkaStreamsPipelineOptions.class);
     pipelineOptions.setRunner(KafkaStreamsRunner.class);
@@ -109,6 +116,7 @@ public class KafkaStreamsRunnerTest {
     Pipeline pipeline = Pipeline.create();
     pipeline
         .apply(
+            topicOne,
             KafkaIO.<String, Integer>read()
                 .withBootstrapServers(CLUSTER.bootstrapServers())
                 .withTopic(topicOne)
@@ -118,6 +126,7 @@ public class KafkaStreamsRunnerTest {
                     Collections.singletonMap(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest"))
                 .withoutMetadata())
         .apply(
+            topicTwo,
             KafkaIO.<String, Integer>write()
                 .withBootstrapServers(CLUSTER.bootstrapServers())
                 .withTopic(topicTwo)
@@ -132,5 +141,60 @@ public class KafkaStreamsRunnerTest {
             consumerConfiguration, topicTwo, 1);
     Assert.assertEquals(1, keyValues.size());
     Assert.assertEquals(KeyValue.pair("KEY", 1), keyValues.get(0));
+  }
+
+  @Test
+  public void testGroupByKey() throws ExecutionException, InterruptedException, IOException {
+    LoggerFactory.getLogger(KafkaStreamsRunnerTest.class)
+        .error("testGroupByKey topicOne: {}", topicOne);
+    KafkaStreamsPipelineOptions pipelineOptions =
+        PipelineOptionsFactory.create().as(KafkaStreamsPipelineOptions.class);
+    pipelineOptions.setRunner(KafkaStreamsRunner.class);
+    pipelineOptions.setNumPartitions(PARTITIONS);
+    pipelineOptions.setProperties(streamsConfiguration);
+    Pipeline pipeline = Pipeline.create();
+    pipeline
+        .apply(
+            topicOne,
+            KafkaIO.<String, Integer>read()
+                .withBootstrapServers(CLUSTER.bootstrapServers())
+                .withTopic(topicOne)
+                .withKeyDeserializer(StringDeserializer.class)
+                .withValueDeserializer(IntegerDeserializer.class)
+                .updateConsumerProperties(
+                    Collections.singletonMap(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest"))
+                .withoutMetadata())
+        .apply(
+            Window.<KV<String, Integer>>configure()
+                .triggering(
+                    AfterProcessingTime.pastFirstElementInPane().plusDelayOf(Duration.millis(100)))
+                .discardingFiredPanes())
+        .apply(Sum.integersPerKey())
+        .apply(
+            topicTwo,
+            KafkaIO.<String, Integer>write()
+                .withBootstrapServers(CLUSTER.bootstrapServers())
+                .withTopic(topicTwo)
+                .withKeySerializer(StringSerializer.class)
+                .withValueSerializer(IntegerSerializer.class));
+    KafkaStreamsRunner.fromOptions(pipelineOptions).run(pipeline);
+
+    IntegrationTestUtils.produceKeyValuesSynchronously(
+        topicOne,
+        Arrays.asList(
+            KeyValue.pair("KEY_ONE", 1),
+            KeyValue.pair("KEY_TWO", 2),
+            KeyValue.pair("KEY_ONE", 2),
+            KeyValue.pair("KEY_TWO", 3)),
+        producerConfiguration,
+        Time.SYSTEM);
+    List<KeyValue<String, Integer>> keyValues =
+        IntegrationTestUtils.waitUntilMinKeyValueRecordsReceived(
+            consumerConfiguration, topicTwo, 2);
+    Collections.sort(
+        keyValues, (keyValueOne, keyValueTwo) -> keyValueOne.key.compareTo(keyValueTwo.key));
+    Assert.assertEquals(2, keyValues.size());
+    Assert.assertEquals(KeyValue.pair("KEY_ONE", 3), keyValues.get(0));
+    Assert.assertEquals(KeyValue.pair("KEY_TWO", 5), keyValues.get(1));
   }
 }

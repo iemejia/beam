@@ -593,7 +593,7 @@ public class Combine {
   }
 
   /** A {@link Coder} for a {@link Holder}. */
-  private static class HolderCoder<V> extends StructuredCoder<Holder<V>> {
+  public static class HolderCoder<V> extends StructuredCoder<Holder<V>> {
 
     private Coder<V> valueCoder;
 

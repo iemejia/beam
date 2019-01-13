@@ -26,9 +26,14 @@ import org.apache.beam.runners.core.DoFnRunner;
 import org.apache.beam.runners.core.DoFnRunners;
 import org.apache.beam.runners.core.InMemoryTimerInternals;
 import org.apache.beam.runners.core.StateInternals;
+import org.apache.beam.runners.core.StateNamespace;
 import org.apache.beam.runners.core.StateNamespaces;
+import org.apache.beam.runners.core.StateNamespaces.GlobalNamespace;
+import org.apache.beam.runners.core.StateNamespaces.WindowAndTriggerNamespace;
+import org.apache.beam.runners.core.StateNamespaces.WindowNamespace;
 import org.apache.beam.runners.core.StepContext;
 import org.apache.beam.runners.core.TimerInternals;
+import org.apache.beam.runners.core.TimerInternals.TimerData;
 import org.apache.beam.runners.core.construction.ParDoTranslation;
 import org.apache.beam.runners.kafkastreams.admin.Admin;
 import org.apache.beam.runners.kafkastreams.serde.CoderSerde;
@@ -51,6 +56,7 @@ import org.apache.beam.sdk.transforms.reflect.DoFnInvokers;
 import org.apache.beam.sdk.transforms.reflect.DoFnSignature.StateDeclaration;
 import org.apache.beam.sdk.transforms.reflect.DoFnSignatures;
 import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
+import org.apache.beam.sdk.transforms.windowing.GlobalWindow;
 import org.apache.beam.sdk.util.WindowedValue;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.PCollectionView;
@@ -77,7 +83,6 @@ import org.apache.kafka.streams.processor.StateStore;
 import org.apache.kafka.streams.state.KeyValueStore;
 import org.apache.kafka.streams.state.StoreBuilder;
 import org.apache.kafka.streams.state.Stores;
-import org.slf4j.LoggerFactory;
 
 /**
  * Kafka Streams translator for the Beam {@link ParDo} primitive. Uses {@link
@@ -87,7 +92,7 @@ import org.slf4j.LoggerFactory;
  * stateDeclarations. Creates a {@link GlobalKTable} for each side input, backed by a {@link
  * StateStore} that readable by the {@link KSideInputReader}.
  */
-public class ParDoTransformTranslator<InputT, OutputT>
+public class ParDoTransformTranslator<InputT, OutputT, W extends BoundedWindow>
     implements TransformTranslator<ParDo.MultiOutput<InputT, OutputT>> {
 
   @SuppressWarnings("unchecked")
@@ -95,11 +100,11 @@ public class ParDoTransformTranslator<InputT, OutputT>
   public void translate(
       PipelineTranslator pipelineTranslator, ParDo.MultiOutput<InputT, OutputT> transform) {
     try {
-      LoggerFactory.getLogger(getClass()).error("Translating ParDo {}", transform);
       PipelineOptions pipelineOptions = pipelineTranslator.getPipelineOptions();
       PCollection<InputT> input = (PCollection<InputT>) pipelineTranslator.getInput(transform);
       Coder<InputT> inputCoder = input.getCoder();
-      WindowingStrategy<?, ?> windowingStrategy = input.getWindowingStrategy();
+      WindowingStrategy<?, W> windowingStrategy =
+          (WindowingStrategy<?, W>) input.getWindowingStrategy();
       Map<TupleTag<?>, PValue> outputs = pipelineTranslator.getOutputs(transform);
       Map<TupleTag<?>, Coder<?>> outputCoders = pipelineTranslator.getOutputCoders();
       AppliedPTransform<?, ?, ?> appliedPTransform = pipelineTranslator.getCurrentTransform();
@@ -271,9 +276,10 @@ public class ParDoTransformTranslator<InputT, OutputT>
     private final List<TupleTag<?>> additionalOutputTags;
     private final Coder<InputT> inputCoder;
     private final Map<TupleTag<?>, Coder<?>> outputCoders;
-    private final WindowingStrategy<?, ?> windowingStrategy;
+    private final WindowingStrategy<?, W> windowingStrategy;
 
     private ProcessorContext processorContext;
+    private KStateInternals<InputT> stateInternals;
     private InMemoryTimerInternals timerInternals;
     private DoFnInvoker<InputT, OutputT> doFnInvoker;
     private DoFnRunner<InputT, OutputT> doFnRunner;
@@ -287,7 +293,7 @@ public class ParDoTransformTranslator<InputT, OutputT>
         List<TupleTag<?>> additionalOutputTags,
         Coder<InputT> inputCoder,
         Map<TupleTag<?>, Coder<?>> outputCoders,
-        WindowingStrategy<?, ?> windowingStrategy) {
+        WindowingStrategy<?, W> windowingStrategy) {
       this.pipelineOptions = pipelineOptions;
       this.doFn = doFn;
       this.sideInputs = sideInputs;
@@ -301,9 +307,13 @@ public class ParDoTransformTranslator<InputT, OutputT>
     @Override
     public void init(ProcessorContext processorContext) {
       this.processorContext = processorContext;
-      this.timerInternals = new InMemoryTimerInternals();
-      this.doFnInvoker = DoFnInvokers.invokerFor(doFn);
-      this.doFnRunner =
+      // TODO: Get punctuateInterval from pipelineOptions.
+      this.processorContext.schedule(1000, PunctuationType.WALL_CLOCK_TIME, new ParDoPunctuator());
+      stateInternals = KStateInternals.of(processorContext);
+      timerInternals = new InMemoryTimerInternals();
+      doFnInvoker = DoFnInvokers.invokerFor(doFn);
+      doFnInvoker.invokeSetup();
+      doFnRunner =
           DoFnRunners.simpleRunner(
               pipelineOptions,
               doFn,
@@ -315,9 +325,6 @@ public class ParDoTransformTranslator<InputT, OutputT>
               inputCoder,
               outputCoders,
               windowingStrategy);
-      // TODO: Get punctuateInterval from pipelineOptions.
-      this.processorContext.schedule(1000, PunctuationType.WALL_CLOCK_TIME, new ParDoPunctuator());
-      doFnInvoker.invokeSetup();
       doFnRunner.startBundle();
     }
 
@@ -333,7 +340,7 @@ public class ParDoTransformTranslator<InputT, OutputT>
     @Override
     public void close() {
       doFnRunner.finishBundle();
-      doFnInvoker.invokeSetup();
+      doFnInvoker.invokeTeardown();
     }
 
     private class ParDoOutputManager implements DoFnRunners.OutputManager {
@@ -348,9 +355,22 @@ public class ParDoTransformTranslator<InputT, OutputT>
 
       @Override
       public void punctuate(long timestamp) {
-        // TODO: Fire expired timers.
+        // TODO: Advance other times.
         doFnRunner.finishBundle();
         doFnRunner.startBundle();
+      }
+
+      private BoundedWindow window(TimerData timerData) {
+        StateNamespace namespace = timerData.getNamespace();
+        if (namespace instanceof GlobalNamespace) {
+          return GlobalWindow.INSTANCE;
+        } else if (namespace instanceof WindowNamespace) {
+          return ((WindowNamespace<?>) namespace).getWindow();
+        } else if (namespace instanceof WindowAndTriggerNamespace) {
+          return ((WindowAndTriggerNamespace<?>) namespace).getWindow();
+        } else {
+          throw new RuntimeException("Invalid namespace: " + namespace);
+        }
       }
     }
 
@@ -358,7 +378,7 @@ public class ParDoTransformTranslator<InputT, OutputT>
 
       @Override
       public StateInternals stateInternals() {
-        return KStateInternals.of(input, processorContext);
+        return stateInternals.withKey(input);
       }
 
       @Override

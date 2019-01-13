@@ -17,13 +17,20 @@
  */
 package org.apache.beam.runners.kafkastreams.state;
 
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.Iterator;
+import java.util.List;
 import java.util.Set;
 import javax.annotation.Nullable;
 import org.apache.beam.runners.core.StateNamespace;
+import org.apache.beam.runners.core.StateNamespaces;
 import org.apache.beam.runners.core.TimerInternals;
+import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.state.TimeDomain;
 import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
+import org.apache.beam.sdk.values.KV;
+import org.apache.kafka.streams.KeyValue;
 import org.apache.kafka.streams.kstream.Transformer;
 import org.apache.kafka.streams.processor.ProcessorContext;
 import org.apache.kafka.streams.state.KeyValueStore;
@@ -33,38 +40,53 @@ import org.joda.time.Instant;
  * Kafka {@link TimerInternals}, accesses timer state and watermarkTime via the {@link
  * ProcessorContext} of a {@link Transformer}.
  */
-public class KTimerInternals implements TimerInternals {
-
-  @SuppressWarnings("unchecked")
-  public static KTimerInternals of(ProcessorContext processorContext) {
-    return new KTimerInternals(
-        (KeyValueStore<String, Instant>) processorContext.getStateStore(TIMER_INTERNALS));
-  }
+public class KTimerInternals<K, W extends BoundedWindow> implements TimerInternals {
 
   public static final String TIMER_INTERNALS = "TIMER_INTERNALS";
 
-  private final KeyValueStore<String, Instant> keyValueStore;
+  @SuppressWarnings("unchecked")
+  public static <K, W extends BoundedWindow> KTimerInternals<K, W> of(
+      ProcessorContext processorContext, Coder<W> windowCoder) {
+    return new KTimerInternals<>(
+        (KeyValueStore<String, KV<K, Instant>>) processorContext.getStateStore(TIMER_INTERNALS),
+        windowCoder);
+  }
+
+  private final KeyValueStore<String, KV<K, Instant>> keyValueStore;
+  private final Coder<W> windowCoder;
   private final Set<String> eventTimers;
   private final Set<String> processingTimers;
   private final Set<String> synchronizedProcessingTimers;
 
+  private Instant processingTime;
+  private Instant synchronizedProcessingTime;
   private Instant inputWatermarkTime;
   private Instant outputWatermarkTime;
+  private K key;
 
-  private KTimerInternals(KeyValueStore<String, Instant> keyValueStore) {
+  private KTimerInternals(
+      KeyValueStore<String, KV<K, Instant>> keyValueStore, Coder<W> windowCoder) {
     this.keyValueStore = keyValueStore;
+    this.windowCoder = windowCoder;
     this.eventTimers = new HashSet<>();
     this.processingTimers = new HashSet<>();
     this.synchronizedProcessingTimers = new HashSet<>();
+    this.processingTime = BoundedWindow.TIMESTAMP_MIN_VALUE;
+    this.synchronizedProcessingTime = BoundedWindow.TIMESTAMP_MIN_VALUE;
     this.inputWatermarkTime = BoundedWindow.TIMESTAMP_MIN_VALUE;
     this.outputWatermarkTime = BoundedWindow.TIMESTAMP_MIN_VALUE;
+  }
+
+  public KTimerInternals<K, W> withKey(K key) {
+    this.key = key;
+    return this;
   }
 
   @Override
   public void setTimer(
       StateNamespace namespace, String timerId, Instant target, TimeDomain timeDomain) {
-    String key = timerId + "+" + namespace.stringKey();
-    keyValueStore.put(key, target);
+    String id = timerId + "+" + namespace.stringKey();
+    keyValueStore.put(id, KV.of(key, target));
     switch (timeDomain) {
       case EVENT_TIME:
         eventTimers.add(timerId);
@@ -76,7 +98,7 @@ public class KTimerInternals implements TimerInternals {
         synchronizedProcessingTimers.add(timerId);
         break;
       default:
-        throw new IllegalStateException("Unknown time domain.");
+        throw new IllegalStateException("Invalid time domain: " + timeDomain);
     }
   }
 
@@ -106,15 +128,26 @@ public class KTimerInternals implements TimerInternals {
     deleteTimer(timerKey.getNamespace(), timerKey.getTimerId(), timerKey.getDomain());
   }
 
+  public void advanceProcessingTime(Instant processingTime) {
+    this.processingTime = processingTime;
+  }
+
   @Override
   public Instant currentProcessingTime() {
-    return Instant.now();
+    return processingTime;
+  }
+
+  public void advanceSynchronizedProcessingTime(Instant synchronizedProcessingTime) {
+    this.synchronizedProcessingTime = synchronizedProcessingTime;
   }
 
   @Override
   public Instant currentSynchronizedProcessingTime() {
-    // TODO Auto-generated method stub
-    return null;
+    return synchronizedProcessingTime;
+  }
+
+  public void advanceInputWatermarkTime(Instant inputWatermarkTime) {
+    this.inputWatermarkTime = inputWatermarkTime;
   }
 
   @Override
@@ -122,12 +155,48 @@ public class KTimerInternals implements TimerInternals {
     return inputWatermarkTime;
   }
 
+  public void currentOutputWatermarkTime(Instant outputWatermarkTime) {
+    this.outputWatermarkTime = outputWatermarkTime;
+  }
+
   @Override
   public Instant currentOutputWatermarkTime() {
     return outputWatermarkTime;
   }
 
-  public String getFireableTimers() {
-    return null;
+  public List<KV<K, TimerData>> getFireableTimers() {
+    Iterator<KeyValue<String, KV<K, Instant>>> keyValueIterator = keyValueStore.all();
+    List<KV<K, TimerData>> fireableTimers = new ArrayList<>();
+    while (keyValueIterator.hasNext()) {
+      KeyValue<String, KV<K, Instant>> keyValue = keyValueIterator.next();
+
+      String id = keyValue.key;
+      int lastIndexOfPlus = id.lastIndexOf("+");
+      String timerId = id.substring(0, lastIndexOfPlus);
+      String namespaceStringKey = id.substring(lastIndexOfPlus + 1);
+
+      TimeDomain domain;
+      Instant currentDomainTime;
+      if (eventTimers.contains(timerId)) {
+        domain = TimeDomain.EVENT_TIME;
+        currentDomainTime = inputWatermarkTime;
+      } else if (processingTimers.contains(timerId)) {
+        domain = TimeDomain.PROCESSING_TIME;
+        currentDomainTime = processingTime;
+      } else if (synchronizedProcessingTimers.contains(timerId)) {
+        domain = TimeDomain.SYNCHRONIZED_PROCESSING_TIME;
+        currentDomainTime = synchronizedProcessingTime;
+      } else {
+        throw new RuntimeException("Invalid timerId: " + timerId);
+      }
+
+      Instant timestamp = keyValue.value.getValue();
+      if (currentDomainTime.isAfter(timestamp)) {
+        StateNamespace namespace = StateNamespaces.fromString(namespaceStringKey, windowCoder);
+        TimerData timerData = TimerData.of(timerId, namespace, timestamp, domain);
+        fireableTimers.add(KV.of(keyValue.value.getKey(), timerData));
+      }
+    }
+    return fireableTimers;
   }
 }

@@ -49,21 +49,26 @@ import org.joda.time.Instant;
  */
 public class KStateInternals<K> implements StateInternals {
 
-  public static <K> KStateInternals<K> of(K key, ProcessorContext processorContext) {
-    return new KStateInternals<K>(processorContext, key);
+  public static <K> KStateInternals<K> of(ProcessorContext processorContext) {
+    return new KStateInternals<K>(processorContext);
   }
 
   private final ProcessorContext processorContext;
-  private final K key;
 
-  private KStateInternals(ProcessorContext processorContext, K key) {
+  private K key;
+
+  private KStateInternals(ProcessorContext processorContext) {
     this.processorContext = processorContext;
-    this.key = key;
   }
 
   @Override
   public K getKey() {
     return key;
+  }
+
+  public KStateInternals<K> withKey(K key) {
+    this.key = key;
+    return this;
   }
 
   @Override

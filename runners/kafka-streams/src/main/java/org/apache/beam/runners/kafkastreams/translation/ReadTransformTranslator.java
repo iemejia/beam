@@ -54,13 +54,11 @@ import org.apache.kafka.streams.Topology;
 import org.apache.kafka.streams.kstream.Consumed;
 import org.apache.kafka.streams.kstream.KStream;
 import org.apache.kafka.streams.kstream.Predicate;
-import org.apache.kafka.streams.kstream.Printed;
 import org.apache.kafka.streams.kstream.Produced;
 import org.apache.kafka.streams.kstream.Transformer;
 import org.apache.kafka.streams.kstream.TransformerSupplier;
 import org.apache.kafka.streams.processor.ProcessorContext;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.apache.kafka.streams.processor.To;
 
 /**
  * Kafka Streams translator for the Beam {@link Read} primitive. Creates a topic (if this is the
@@ -74,8 +72,6 @@ import org.slf4j.LoggerFactory;
 public class ReadTransformTranslator<
         OutputT, CheckpointMarkT extends UnboundedSource.CheckpointMark>
     implements TransformTranslator<PTransform<PBegin, PCollection<OutputT>>> {
-
-  private static final Logger LOG = LoggerFactory.getLogger(ReadTransformTranslator.class);
 
   @SuppressWarnings({"unchecked", "serial"})
   @Override
@@ -99,8 +95,6 @@ public class ReadTransformTranslator<
                 topic,
                 Consumed.with(Serdes.Integer(), CoderSerde.of(unboundedSourceCoder))
                     .withOffsetResetPolicy(Topology.AutoOffsetReset.EARLIEST));
-
-    stream.print(Printed.toSysOut());
 
     Predicate<Object, Object>[] predicates =
         new Predicate[] {
@@ -213,7 +207,6 @@ public class ReadTransformTranslator<
 
     @Override
     public void init(ProcessorContext processorContext) {
-      LOG.error("Init...");
       this.processorContext = processorContext;
     }
 
@@ -231,7 +224,8 @@ public class ReadTransformTranslator<
           processorContext.forward(
               Bytes.wrap(unboundedReader.getCurrentRecordId()),
               WindowedValue.timestampedValueInGlobalWindow(
-                  unboundedReader.getCurrent(), unboundedReader.getCurrentTimestamp()));
+                  unboundedReader.getCurrent(), unboundedReader.getCurrentTimestamp()),
+              To.all().withTimestamp(unboundedReader.getCurrentTimestamp().getMillis()));
           dataAvailable = unboundedReader.advance();
           batchSize++;
         }

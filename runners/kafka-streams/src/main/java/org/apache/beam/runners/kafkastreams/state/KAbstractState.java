@@ -23,6 +23,7 @@ import org.apache.beam.runners.core.StateNamespace;
 import org.apache.beam.runners.core.StateNamespaces;
 import org.apache.beam.sdk.state.State;
 import org.apache.kafka.streams.state.KeyValueStore;
+import org.slf4j.LoggerFactory;
 
 /**
  * Kafka Streams abstract {@link State}, that queries an underlying {@link KeyValueStore} and
@@ -44,8 +45,10 @@ public abstract class KAbstractState<K, V> {
   protected V get() {
     Map<String, V> namespaces = keyValueStore.get(key);
     if (namespaces == null) {
+      LoggerFactory.getLogger(getClass()).error("Get: {}, null", key);
       return null;
     } else {
+      LoggerFactory.getLogger(getClass()).error("Get: {}, {}", key, namespaces.get(namespace));
       return namespaces.get(namespace);
     }
   }
@@ -56,10 +59,12 @@ public abstract class KAbstractState<K, V> {
       namespaces = new HashMap<>();
     }
     namespaces.put(namespace, value);
+    LoggerFactory.getLogger(getClass()).error("Set: {}", value);
     keyValueStore.put(key, namespaces);
   }
 
   protected void clear() {
+    LoggerFactory.getLogger(getClass()).error("Clear: {}", key);
     Map<String, V> namespaces = keyValueStore.get(key);
     if (namespaces != null) {
       namespaces.remove(namespace);
