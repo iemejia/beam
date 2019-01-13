@@ -17,11 +17,11 @@
  */
 package org.apache.beam.runners.kafkastreams.state;
 
-import java.util.Map;
 import org.apache.beam.runners.core.StateNamespace;
 import org.apache.beam.sdk.state.ReadableState;
 import org.apache.beam.sdk.state.WatermarkHoldState;
 import org.apache.beam.sdk.transforms.windowing.TimestampCombiner;
+import org.apache.beam.sdk.values.KV;
 import org.apache.kafka.streams.state.KeyValueStore;
 import org.joda.time.Instant;
 
@@ -34,7 +34,7 @@ public class KWatermarkHoldState<K> extends KAbstractState<K, Instant>
   protected KWatermarkHoldState(
       K key,
       StateNamespace namespace,
-      KeyValueStore<K, Map<String, Instant>> keyValueStore,
+      KeyValueStore<KV<K, String>, Instant> keyValueStore,
       TimestampCombiner timestampCombiner) {
     super(key, namespace, keyValueStore);
     this.timestampCombiner = timestampCombiner;

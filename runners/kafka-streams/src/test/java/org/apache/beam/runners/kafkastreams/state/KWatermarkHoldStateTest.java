@@ -17,9 +17,9 @@
  */
 package org.apache.beam.runners.kafkastreams.state;
 
-import java.util.Map;
 import org.apache.beam.runners.core.StateNamespaces;
 import org.apache.beam.sdk.transforms.windowing.TimestampCombiner;
+import org.apache.beam.sdk.values.KV;
 import org.joda.time.Instant;
 import org.junit.Assert;
 import org.junit.Before;
@@ -32,7 +32,7 @@ public class KWatermarkHoldStateTest {
   private static final Instant WATERMARK_ONE = Instant.now();
   private static final Instant WATERMARK_TWO = Instant.now();
 
-  private MockKeyValueStore<String, Map<String, Instant>> keyValueStore;
+  private MockKeyValueStore<KV<String, String>, Instant> keyValueStore;
   private KWatermarkHoldState<String> watermarkHoldeState;
 
   @Before

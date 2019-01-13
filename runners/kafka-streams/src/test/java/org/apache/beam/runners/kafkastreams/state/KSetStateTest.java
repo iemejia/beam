@@ -19,9 +19,9 @@ package org.apache.beam.runners.kafkastreams.state;
 
 import java.util.Collections;
 import java.util.HashSet;
-import java.util.Map;
 import java.util.Set;
 import org.apache.beam.runners.core.StateNamespaces;
+import org.apache.beam.sdk.values.KV;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
@@ -33,7 +33,7 @@ public class KSetStateTest {
   private static final Integer VALUE_ONE = 1;
   private static final Integer VALUE_TWO = 2;
 
-  private MockKeyValueStore<String, Map<String, Set<Integer>>> keyValueStore;
+  private MockKeyValueStore<KV<String, String>, Set<Integer>> keyValueStore;
   private KSetState<String, Integer> setState;
 
   @Before

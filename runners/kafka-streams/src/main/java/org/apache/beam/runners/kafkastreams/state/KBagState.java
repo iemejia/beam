@@ -20,17 +20,17 @@ package org.apache.beam.runners.kafkastreams.state;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.Map;
 import org.apache.beam.runners.core.StateNamespace;
 import org.apache.beam.sdk.state.BagState;
 import org.apache.beam.sdk.state.ReadableState;
+import org.apache.beam.sdk.values.KV;
 import org.apache.kafka.streams.state.KeyValueStore;
 
 /** Kafka Streams {@link BagState}. */
 public class KBagState<K, V> extends KAbstractState<K, List<V>> implements BagState<V> {
 
   protected KBagState(
-      K key, StateNamespace namespace, KeyValueStore<K, Map<String, List<V>>> keyValueStore) {
+      K key, StateNamespace namespace, KeyValueStore<KV<K, String>, List<V>> keyValueStore) {
     super(key, namespace, keyValueStore);
   }
 

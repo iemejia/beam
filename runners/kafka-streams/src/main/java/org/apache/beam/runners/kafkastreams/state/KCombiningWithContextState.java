@@ -18,11 +18,11 @@
 package org.apache.beam.runners.kafkastreams.state;
 
 import java.util.Arrays;
-import java.util.Map;
 import org.apache.beam.runners.core.StateNamespace;
 import org.apache.beam.sdk.state.CombiningState;
 import org.apache.beam.sdk.state.ReadableState;
 import org.apache.beam.sdk.transforms.CombineWithContext;
+import org.apache.beam.sdk.values.KV;
 import org.apache.kafka.streams.state.KeyValueStore;
 
 /** Kafka Streams {@link CombiningState} with {@link CombineWithContext.Context Context}. */
@@ -35,7 +35,7 @@ public class KCombiningWithContextState<K, InputT, AccumT, OutputT>
   protected KCombiningWithContextState(
       K key,
       StateNamespace namespace,
-      KeyValueStore<K, Map<String, AccumT>> keyValueStore,
+      KeyValueStore<KV<K, String>, AccumT> keyValueStore,
       CombineWithContext.CombineFnWithContext<InputT, AccumT, OutputT> combineFn,
       CombineWithContext.Context context) {
     super(key, namespace, keyValueStore);

@@ -45,7 +45,6 @@ import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.coders.InstantCoder;
 import org.apache.beam.sdk.coders.KvCoder;
 import org.apache.beam.sdk.coders.ListCoder;
-import org.apache.beam.sdk.coders.MapCoder;
 import org.apache.beam.sdk.coders.StringUtf8Coder;
 import org.apache.beam.sdk.coders.VarLongCoder;
 import org.apache.beam.sdk.options.PipelineOptionsFactory;
@@ -189,63 +188,59 @@ public class GroupByKeyTransformTranslator<K, V, W extends BoundedWindow>
         .addStateStore(
             Stores.keyValueStoreBuilder(
                 Stores.persistentKeyValueStore(BUF),
-                CoderSerde.of(keyCoder),
-                CoderSerde.of(MapCoder.of(StringUtf8Coder.of(), ListCoder.of(valueCoder)))));
+                CoderSerde.of(KvCoder.of(keyCoder, StringUtf8Coder.of())),
+                CoderSerde.of(ListCoder.of(valueCoder))));
     // TriggerStateMachineRunner.FINISHED_BITS_TAG
     pipelineTranslator
         .getStreamsBuilder()
         .addStateStore(
             Stores.keyValueStoreBuilder(
                 Stores.persistentKeyValueStore(CLOSED),
-                CoderSerde.of(keyCoder),
-                CoderSerde.of(MapCoder.of(StringUtf8Coder.of(), BitSetCoder.of()))));
+                CoderSerde.of(KvCoder.of(keyCoder, StringUtf8Coder.of())),
+                CoderSerde.of(BitSetCoder.of())));
     // NonEmptyPanes.GeneralNonEmptyPanes.PANE_ADDITIONS_TAG
     pipelineTranslator
         .getStreamsBuilder()
         .addStateStore(
             Stores.keyValueStoreBuilder(
                 Stores.persistentKeyValueStore(COUNT),
-                CoderSerde.of(keyCoder),
+                CoderSerde.of(KvCoder.of(keyCoder, StringUtf8Coder.of())),
                 CoderSerde.of(
-                    MapCoder.of(
-                        StringUtf8Coder.of(),
-                        Sum.ofLongs()
-                            .getAccumulatorCoder(
-                                pipelineTranslator.getCoderRegistry(), VarLongCoder.of())))));
+                    Sum.ofLongs()
+                        .getAccumulatorCoder(
+                            pipelineTranslator.getCoderRegistry(), VarLongCoder.of()))));
     // AfterDelayFromFirstElementStateMachine.DELAYED_UNTIL_TAG
     pipelineTranslator
         .getStreamsBuilder()
         .addStateStore(
             Stores.keyValueStoreBuilder(
                 Stores.persistentKeyValueStore(DELAYED),
-                CoderSerde.of(keyCoder),
-                CoderSerde.of(
-                    MapCoder.of(
-                        StringUtf8Coder.of(), new Combine.HolderCoder<>(InstantCoder.of())))));
+                CoderSerde.of(KvCoder.of(keyCoder, StringUtf8Coder.of())),
+                CoderSerde.of(new Combine.HolderCoder<>(InstantCoder.of()))));
     // WatermarkHold.EXTRA_HOLD_TAG
     pipelineTranslator
         .getStreamsBuilder()
         .addStateStore(
             Stores.keyValueStoreBuilder(
                 Stores.persistentKeyValueStore(EXTRA),
-                CoderSerde.of(keyCoder),
-                CoderSerde.of(MapCoder.of(StringUtf8Coder.of(), InstantCoder.of()))));
+                CoderSerde.of(KvCoder.of(keyCoder, StringUtf8Coder.of())),
+                CoderSerde.of(InstantCoder.of())));
     // WatermarkHold.watermarkHoldTagForTimestampCombiner(TimestampCombiner)
     pipelineTranslator
         .getStreamsBuilder()
         .addStateStore(
             Stores.keyValueStoreBuilder(
                 Stores.persistentKeyValueStore(HOLD),
-                CoderSerde.of(keyCoder),
-                CoderSerde.of(MapCoder.of(StringUtf8Coder.of(), InstantCoder.of()))));
+                CoderSerde.of(KvCoder.of(keyCoder, StringUtf8Coder.of())),
+                CoderSerde.of(InstantCoder.of())));
     // PaneInfoTracker.PANE_INFO_TAG
     pipelineTranslator
         .getStreamsBuilder()
         .addStateStore(
             Stores.keyValueStoreBuilder(
                 Stores.persistentKeyValueStore(PANE),
-                CoderSerde.of(keyCoder),
-                CoderSerde.of(MapCoder.of(StringUtf8Coder.of(), PaneInfoCoder.INSTANCE))));
+                CoderSerde.of(KvCoder.of(keyCoder, StringUtf8Coder.of())),
+                CoderSerde.of(PaneInfoCoder.INSTANCE)));
     // KTimerInternals.TIMER_INTERNALS
     pipelineTranslator
         .getStreamsBuilder()
@@ -286,8 +281,10 @@ public class GroupByKeyTransformTranslator<K, V, W extends BoundedWindow>
     @Override
     public void init(ProcessorContext processorContext) {
       this.processorContext = processorContext;
-      this.stateInternals = KStateInternals.of(processorContext);
-      this.timerInternals =
+      // TODO: Get punctuateInterval from pipelineOptions.
+      this.processorContext.schedule(1000, PunctuationType.WALL_CLOCK_TIME, new GABWPunctuator());
+      stateInternals = KStateInternals.of(processorContext);
+      timerInternals =
           KTimerInternals.of(processorContext, windowingStrategy.getWindowFn().windowCoder());
       DoFnRunners.OutputManager outputManager = new GABWOutputManger();
       SystemReduceFn<K, V, ?, Iterable<V>, W> reduceFn = SystemReduceFn.buffering(valueCoder);
@@ -300,7 +297,7 @@ public class GroupByKeyTransformTranslator<K, V, W extends BoundedWindow>
               reduceFn,
               outputManager,
               mainOutputTag);
-      this.doFnRunner =
+      doFnRunner =
           DoFnRunners.simpleRunner(
               PipelineOptionsFactory.create(),
               doFn,
@@ -313,9 +310,6 @@ public class GroupByKeyTransformTranslator<K, V, W extends BoundedWindow>
                   keyCoder, valueCoder, windowingStrategy.getWindowFn().windowCoder()),
               Collections.emptyMap(),
               windowingStrategy);
-
-      // TODO: Get punctuateInterval from pipelineOptions.
-      this.processorContext.schedule(1000, PunctuationType.WALL_CLOCK_TIME, new GABWPunctuator());
     }
 
     @Override

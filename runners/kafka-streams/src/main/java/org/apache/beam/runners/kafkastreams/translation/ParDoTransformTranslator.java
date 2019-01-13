@@ -41,6 +41,7 @@ import org.apache.beam.runners.kafkastreams.sideinput.KSideInputReader;
 import org.apache.beam.runners.kafkastreams.sideinput.KSideInputReader.KSideInput;
 import org.apache.beam.runners.kafkastreams.state.KStateInternals;
 import org.apache.beam.sdk.coders.Coder;
+import org.apache.beam.sdk.coders.KvCoder;
 import org.apache.beam.sdk.coders.ListCoder;
 import org.apache.beam.sdk.coders.MapCoder;
 import org.apache.beam.sdk.coders.SetCoder;
@@ -217,36 +218,32 @@ public class ParDoTransformTranslator<InputT, OutputT, W extends BoundedWindow>
                       public StoreBuilder<?> dispatchValue(Coder<?> valueCoder) {
                         return Stores.keyValueStoreBuilder(
                             Stores.persistentKeyValueStore(stateDeclaration.id()),
-                            CoderSerde.of(inputCoder),
-                            CoderSerde.of(MapCoder.of(StringUtf8Coder.of(), valueCoder)));
+                            CoderSerde.of(KvCoder.of(inputCoder, StringUtf8Coder.of())),
+                            CoderSerde.of(valueCoder));
                       }
 
                       @Override
                       public StoreBuilder<?> dispatchBag(Coder<?> elementCoder) {
                         return Stores.keyValueStoreBuilder(
                             Stores.persistentKeyValueStore(stateDeclaration.id()),
-                            CoderSerde.of(inputCoder),
-                            CoderSerde.of(
-                                MapCoder.of(StringUtf8Coder.of(), ListCoder.of(elementCoder))));
+                            CoderSerde.of(KvCoder.of(inputCoder, StringUtf8Coder.of())),
+                            CoderSerde.of(ListCoder.of(elementCoder)));
                       }
 
                       @Override
                       public StoreBuilder<?> dispatchSet(Coder<?> elementCoder) {
                         return Stores.keyValueStoreBuilder(
                             Stores.persistentKeyValueStore(stateDeclaration.id()),
-                            CoderSerde.of(inputCoder),
-                            CoderSerde.of(
-                                MapCoder.of(StringUtf8Coder.of(), SetCoder.of(elementCoder))));
+                            CoderSerde.of(KvCoder.of(inputCoder, StringUtf8Coder.of())),
+                            CoderSerde.of(SetCoder.of(elementCoder)));
                       }
 
                       @Override
                       public StoreBuilder<?> dispatchMap(Coder<?> keyCoder, Coder<?> valueCoder) {
                         return Stores.keyValueStoreBuilder(
                             Stores.persistentKeyValueStore(stateDeclaration.id()),
-                            CoderSerde.of(inputCoder),
-                            CoderSerde.of(
-                                MapCoder.of(
-                                    StringUtf8Coder.of(), MapCoder.of(keyCoder, valueCoder))));
+                            CoderSerde.of(KvCoder.of(inputCoder, StringUtf8Coder.of())),
+                            CoderSerde.of(MapCoder.of(keyCoder, valueCoder)));
                       }
 
                       @Override
@@ -254,8 +251,8 @@ public class ParDoTransformTranslator<InputT, OutputT, W extends BoundedWindow>
                           CombineFn<?, ?, ?> combineFn, Coder<?> accumCoder) {
                         return Stores.keyValueStoreBuilder(
                             Stores.persistentKeyValueStore(stateDeclaration.id()),
-                            CoderSerde.of(inputCoder),
-                            CoderSerde.of(MapCoder.of(StringUtf8Coder.of(), accumCoder)));
+                            CoderSerde.of(KvCoder.of(inputCoder, StringUtf8Coder.of())),
+                            CoderSerde.of(accumCoder));
                       }
                     }));
       }

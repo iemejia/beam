@@ -21,6 +21,7 @@ import com.google.common.collect.Lists;
 import java.util.HashMap;
 import java.util.Map;
 import org.apache.beam.runners.core.StateNamespaces;
+import org.apache.beam.sdk.values.KV;
 import org.apache.kafka.streams.state.KeyValueStore;
 import org.junit.Assert;
 import org.junit.Before;
@@ -35,7 +36,7 @@ public class KMapStateTest {
   private static final String KEY_TWO = "KEY_TWO";
   private static final Integer VALUE_TWO = 2;
 
-  private KeyValueStore<String, Map<String, Map<String, Integer>>> keyValueStore;
+  private KeyValueStore<KV<String, String>, Map<String, Integer>> keyValueStore;
   private KMapState<String, String, Integer> mapState;
 
   @Before

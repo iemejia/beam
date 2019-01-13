@@ -17,13 +17,11 @@
  */
 package org.apache.beam.runners.kafkastreams.state;
 
-import java.util.HashMap;
-import java.util.Map;
 import org.apache.beam.runners.core.StateNamespace;
 import org.apache.beam.runners.core.StateNamespaces;
 import org.apache.beam.sdk.state.State;
+import org.apache.beam.sdk.values.KV;
 import org.apache.kafka.streams.state.KeyValueStore;
-import org.slf4j.LoggerFactory;
 
 /**
  * Kafka Streams abstract {@link State}, that queries an underlying {@link KeyValueStore} and
@@ -33,46 +31,24 @@ public abstract class KAbstractState<K, V> {
 
   private final K key;
   private final String namespace;
-  private final KeyValueStore<K, Map<String, V>> keyValueStore;
+  private final KeyValueStore<KV<K, String>, V> keyValueStore;
 
   protected KAbstractState(
-      K key, StateNamespace namespace, KeyValueStore<K, Map<String, V>> keyValueStore) {
+      K key, StateNamespace namespace, KeyValueStore<KV<K, String>, V> keyValueStore) {
     this.key = key;
     this.namespace = namespace.stringKey();
     this.keyValueStore = keyValueStore;
   }
 
   protected V get() {
-    Map<String, V> namespaces = keyValueStore.get(key);
-    if (namespaces == null) {
-      LoggerFactory.getLogger(getClass()).error("Get: {}, null", key);
-      return null;
-    } else {
-      LoggerFactory.getLogger(getClass()).error("Get: {}, {}", key, namespaces.get(namespace));
-      return namespaces.get(namespace);
-    }
+    return keyValueStore.get(KV.of(key, namespace));
   }
 
   protected void set(V value) {
-    Map<String, V> namespaces = keyValueStore.get(key);
-    if (namespaces == null) {
-      namespaces = new HashMap<>();
-    }
-    namespaces.put(namespace, value);
-    LoggerFactory.getLogger(getClass()).error("Set: {}", value);
-    keyValueStore.put(key, namespaces);
+    keyValueStore.put(KV.of(key, namespace), value);
   }
 
   protected void clear() {
-    LoggerFactory.getLogger(getClass()).error("Clear: {}", key);
-    Map<String, V> namespaces = keyValueStore.get(key);
-    if (namespaces != null) {
-      namespaces.remove(namespace);
-      if (namespaces.isEmpty()) {
-        keyValueStore.delete(key);
-      } else {
-        keyValueStore.put(key, namespaces);
-      }
-    }
+    keyValueStore.delete(KV.of(key, namespace));
   }
 }

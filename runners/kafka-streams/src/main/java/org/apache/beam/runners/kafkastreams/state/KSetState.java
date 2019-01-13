@@ -19,18 +19,18 @@ package org.apache.beam.runners.kafkastreams.state;
 
 import java.util.Collections;
 import java.util.HashSet;
-import java.util.Map;
 import java.util.Set;
 import org.apache.beam.runners.core.StateNamespace;
 import org.apache.beam.sdk.state.ReadableState;
 import org.apache.beam.sdk.state.SetState;
+import org.apache.beam.sdk.values.KV;
 import org.apache.kafka.streams.state.KeyValueStore;
 
 /** Kafka Streams {@link SetState}. */
 public class KSetState<K, V> extends KAbstractState<K, Set<V>> implements SetState<V> {
 
   protected KSetState(
-      K key, StateNamespace namespace, KeyValueStore<K, Map<String, Set<V>>> keyValueStore) {
+      K key, StateNamespace namespace, KeyValueStore<KV<K, String>, Set<V>> keyValueStore) {
     super(key, namespace, keyValueStore);
   }
 

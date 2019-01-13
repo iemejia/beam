@@ -18,9 +18,9 @@
 package org.apache.beam.runners.kafkastreams.state;
 
 import java.util.Arrays;
-import java.util.Map;
 import org.apache.beam.runners.core.StateNamespaces;
 import org.apache.beam.sdk.transforms.Combine.CombineFn;
+import org.apache.beam.sdk.values.KV;
 import org.apache.kafka.streams.state.KeyValueStore;
 import org.junit.Assert;
 import org.junit.Before;
@@ -62,7 +62,7 @@ public class KCombiningStateTest {
   private static final Integer VALUE_ONE = 1;
   private static final Integer VALUE_TWO = 2;
 
-  private KeyValueStore<String, Map<String, Integer>> keyValueStore;
+  private KeyValueStore<KV<String, String>, Integer> keyValueStore;
   private KCombiningState<String, Integer, Integer, Integer> combiningState;
 
   @Before

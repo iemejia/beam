@@ -38,6 +38,7 @@ import org.apache.beam.sdk.transforms.Combine.CombineFn;
 import org.apache.beam.sdk.transforms.CombineWithContext.CombineFnWithContext;
 import org.apache.beam.sdk.transforms.windowing.TimestampCombiner;
 import org.apache.beam.sdk.util.CombineContextFactory;
+import org.apache.beam.sdk.values.KV;
 import org.apache.kafka.streams.kstream.Transformer;
 import org.apache.kafka.streams.processor.ProcessorContext;
 import org.apache.kafka.streams.state.KeyValueStore;
@@ -91,7 +92,7 @@ public class KStateInternals<K> implements StateInternals {
     @Override
     public <V> ValueState<V> bindValue(String id, StateSpec<ValueState<V>> spec, Coder<V> coder) {
       return new KValueState<K, V>(
-          key, namespace, (KeyValueStore<K, Map<String, V>>) processorContext.getStateStore(id));
+          key, namespace, (KeyValueStore<KV<K, String>, V>) processorContext.getStateStore(id));
     }
 
     @SuppressWarnings("unchecked")
@@ -100,7 +101,7 @@ public class KStateInternals<K> implements StateInternals {
       return new KBagState<K, V>(
           key,
           namespace,
-          (KeyValueStore<K, Map<String, List<V>>>) processorContext.getStateStore(id));
+          (KeyValueStore<KV<K, String>, List<V>>) processorContext.getStateStore(id));
     }
 
     @SuppressWarnings("unchecked")
@@ -109,7 +110,7 @@ public class KStateInternals<K> implements StateInternals {
       return new KSetState<K, V>(
           key,
           namespace,
-          (KeyValueStore<K, Map<String, Set<V>>>) processorContext.getStateStore(id));
+          (KeyValueStore<KV<K, String>, Set<V>>) processorContext.getStateStore(id));
     }
 
     @SuppressWarnings("unchecked")
@@ -122,7 +123,7 @@ public class KStateInternals<K> implements StateInternals {
       return new KMapState<K, KeyT, ValueT>(
           key,
           namespace,
-          (KeyValueStore<K, Map<String, Map<KeyT, ValueT>>>) processorContext.getStateStore(id));
+          (KeyValueStore<KV<K, String>, Map<KeyT, ValueT>>) processorContext.getStateStore(id));
     }
 
     @SuppressWarnings("unchecked")
@@ -135,7 +136,7 @@ public class KStateInternals<K> implements StateInternals {
       return new KCombiningState<K, InputT, AccumT, OutputT>(
           key,
           namespace,
-          (KeyValueStore<K, Map<String, AccumT>>) processorContext.getStateStore(id),
+          (KeyValueStore<KV<K, String>, AccumT>) processorContext.getStateStore(id),
           combineFn);
     }
 
@@ -150,7 +151,7 @@ public class KStateInternals<K> implements StateInternals {
       return new KCombiningWithContextState<K, InputT, AccumT, OutputT>(
           key,
           namespace,
-          (KeyValueStore<K, Map<String, AccumT>>) processorContext.getStateStore(id),
+          (KeyValueStore<KV<K, String>, AccumT>) processorContext.getStateStore(id),
           combineFn,
           CombineContextFactory.createFromStateContext(stateContext));
     }
@@ -162,7 +163,7 @@ public class KStateInternals<K> implements StateInternals {
       return new KWatermarkHoldState<K>(
           key,
           namespace,
-          (KeyValueStore<K, Map<String, Instant>>) processorContext.getStateStore(id),
+          (KeyValueStore<KV<K, String>, Instant>) processorContext.getStateStore(id),
           timestampCombiner);
     }
   }

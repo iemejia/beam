@@ -20,8 +20,8 @@ package org.apache.beam.runners.kafkastreams.state;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
-import java.util.Map;
 import org.apache.beam.runners.core.StateNamespaces;
+import org.apache.beam.sdk.values.KV;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
@@ -33,7 +33,7 @@ public class KBagStateTest {
   private static final Integer VALUE_ONE = 1;
   private static final Integer VALUE_TWO = 2;
 
-  private MockKeyValueStore<String, Map<String, List<Integer>>> keyValueStore;
+  private MockKeyValueStore<KV<String, String>, List<Integer>> keyValueStore;
   private KBagState<String, Integer> bagState;
 
   @Before

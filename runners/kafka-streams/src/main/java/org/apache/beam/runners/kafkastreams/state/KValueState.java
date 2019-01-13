@@ -17,16 +17,16 @@
  */
 package org.apache.beam.runners.kafkastreams.state;
 
-import java.util.Map;
 import org.apache.beam.runners.core.StateNamespace;
 import org.apache.beam.sdk.state.ValueState;
+import org.apache.beam.sdk.values.KV;
 import org.apache.kafka.streams.state.KeyValueStore;
 
 /** Kafka Streams {@link ValueState}. */
 public class KValueState<K, V> extends KAbstractState<K, V> implements ValueState<V> {
 
   protected KValueState(
-      K key, StateNamespace namespace, KeyValueStore<K, Map<String, V>> keyValueStore) {
+      K key, StateNamespace namespace, KeyValueStore<KV<K, String>, V> keyValueStore) {
     super(key, namespace, keyValueStore);
   }
 
