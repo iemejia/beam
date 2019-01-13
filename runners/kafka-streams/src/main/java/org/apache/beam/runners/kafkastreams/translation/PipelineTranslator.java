@@ -21,6 +21,7 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 import org.apache.beam.runners.core.construction.PTransformMatchers;
 import org.apache.beam.runners.core.construction.PTransformTranslation;
@@ -77,6 +78,7 @@ public class PipelineTranslator extends Pipeline.PipelineVisitor.Defaults {
   private final KafkaStreamsPipelineOptions pipelineOptions;
   private final StreamsBuilder streamsBuilder;
   private final Map<PValue, KStream<?, ?>> streams;
+  private final Map<PValue, Set<String>> streamSources;
   private boolean translated;
   private AppliedPTransform<?, ?, ?> currentTransform;
 
@@ -85,6 +87,7 @@ public class PipelineTranslator extends Pipeline.PipelineVisitor.Defaults {
     this.pipelineOptions = pipelineOptions;
     this.streamsBuilder = new StreamsBuilder();
     this.streams = new HashMap<>();
+    this.streamSources = new HashMap<>();
     this.translated = false;
   }
 
@@ -174,6 +177,14 @@ public class PipelineTranslator extends Pipeline.PipelineVisitor.Defaults {
 
   void putStream(PValue value, KStream<?, ?> stream) {
     streams.put(value, stream);
+  }
+
+  Set<String> getStreamSources(PValue value) {
+    return streamSources.get(value);
+  }
+
+  void putStreamSources(PValue value, Set<String> streamSources) {
+    this.streamSources.put(value, streamSources);
   }
 
   CoderRegistry getCoderRegistry() {

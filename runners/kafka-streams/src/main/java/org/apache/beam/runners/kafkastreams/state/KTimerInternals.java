@@ -155,7 +155,7 @@ public class KTimerInternals<K, W extends BoundedWindow> implements TimerInterna
     return inputWatermarkTime;
   }
 
-  public void currentOutputWatermarkTime(Instant outputWatermarkTime) {
+  public void advanceOutputWatermarkTime(Instant outputWatermarkTime) {
     this.outputWatermarkTime = outputWatermarkTime;
   }
 

@@ -18,9 +18,11 @@
 package org.apache.beam.runners.kafkastreams.translation;
 
 import java.io.IOException;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 import org.apache.beam.runners.core.DoFnRunner;
 import org.apache.beam.runners.core.DoFnRunners;
@@ -84,6 +86,7 @@ import org.apache.kafka.streams.processor.StateStore;
 import org.apache.kafka.streams.state.KeyValueStore;
 import org.apache.kafka.streams.state.StoreBuilder;
 import org.apache.kafka.streams.state.Stores;
+import org.joda.time.Instant;
 
 /**
  * Kafka Streams translator for the Beam {@link ParDo} primitive. Uses {@link
@@ -116,6 +119,7 @@ public class ParDoTransformTranslator<InputT, OutputT, W extends BoundedWindow>
           (TupleTag<OutputT>) ParDoTranslation.getMainOutputTag(appliedPTransform);
       TupleTagList additionalOutputTags =
           ParDoTranslation.getAdditionalOutputTags(appliedPTransform);
+      Set<String> streamSources = pipelineTranslator.getStreamSources(input);
 
       KStream<Object, WindowedValue<InputT>> inputStream = pipelineTranslator.getStream(input);
 
@@ -133,7 +137,8 @@ public class ParDoTransformTranslator<InputT, OutputT, W extends BoundedWindow>
                       additionalOutputTags.getAll(),
                       inputCoder,
                       outputCoders,
-                      windowingStrategy),
+                      windowingStrategy,
+                      streamSources),
               prepareStateStores(pipelineTranslator, input.getCoder(), doFn));
 
       List<TupleTag<?>> outputTags = additionalOutputTags.and(mainOutputTag).getAll();
@@ -152,7 +157,9 @@ public class ParDoTransformTranslator<InputT, OutputT, W extends BoundedWindow>
               .toArray(new Predicate[0]);
       KStream<TupleTag<?>, WindowedValue<?>>[] branches = taggedOutputStream.branch(predicates);
       for (int index = 0; index < outputTags.size(); index++) {
-        pipelineTranslator.putStream(outputs.get(outputTags.get(index)), branches[index]);
+        PValue output = outputs.get(outputTags.get(index));
+        pipelineTranslator.putStream(output, branches[index]);
+        pipelineTranslator.putStreamSources(output, streamSources);
       }
     } catch (IOException e) {
       throw new RuntimeException(e);
@@ -274,6 +281,7 @@ public class ParDoTransformTranslator<InputT, OutputT, W extends BoundedWindow>
     private final Coder<InputT> inputCoder;
     private final Map<TupleTag<?>, Coder<?>> outputCoders;
     private final WindowingStrategy<?, W> windowingStrategy;
+    private final Map<String, Instant> streamSourceWatermarks;
 
     private ProcessorContext processorContext;
     private KStateInternals<InputT> stateInternals;
@@ -290,7 +298,8 @@ public class ParDoTransformTranslator<InputT, OutputT, W extends BoundedWindow>
         List<TupleTag<?>> additionalOutputTags,
         Coder<InputT> inputCoder,
         Map<TupleTag<?>, Coder<?>> outputCoders,
-        WindowingStrategy<?, W> windowingStrategy) {
+        WindowingStrategy<?, W> windowingStrategy,
+        Set<String> streamSources) {
       this.pipelineOptions = pipelineOptions;
       this.doFn = doFn;
       this.sideInputs = sideInputs;
@@ -299,6 +308,11 @@ public class ParDoTransformTranslator<InputT, OutputT, W extends BoundedWindow>
       this.inputCoder = inputCoder;
       this.outputCoders = outputCoders;
       this.windowingStrategy = windowingStrategy;
+      this.streamSourceWatermarks =
+          streamSources
+              .stream()
+              .collect(
+                  Collectors.toMap(string -> string, string -> BoundedWindow.TIMESTAMP_MIN_VALUE));
     }
 
     @Override
@@ -328,6 +342,8 @@ public class ParDoTransformTranslator<InputT, OutputT, W extends BoundedWindow>
     @Override
     public KeyValue<TupleTag<?>, WindowedValue<?>> transform(
         Object key, WindowedValue<InputT> value) {
+      streamSourceWatermarks.put(
+          processorContext.topic(), new Instant(processorContext.timestamp()));
       input = value.getValue();
       doFnRunner.processElement(value);
       input = null;
@@ -352,7 +368,13 @@ public class ParDoTransformTranslator<InputT, OutputT, W extends BoundedWindow>
 
       @Override
       public void punctuate(long timestamp) {
-        // TODO: Advance other times.
+        Instant previousInputWatermarkTime = timerInternals.currentInputWatermarkTime();
+        timerInternals.advanceInputWatermark(
+            streamSourceWatermarks.values().stream().min(Comparator.naturalOrder()).get());
+        timerInternals.advanceOutputWatermark(previousInputWatermarkTime);
+        timerInternals.advanceProcessingTime(new Instant(timestamp));
+        // TODO: Get punctuateInterval from pipelineOptions.
+        timerInternals.advanceSynchronizedProcessingTime(new Instant(timestamp - 1000));
         doFnRunner.finishBundle();
         doFnRunner.startBundle();
       }

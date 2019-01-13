@@ -18,6 +18,8 @@
 package org.apache.beam.runners.kafkastreams.translation;
 
 import java.util.Collection;
+import java.util.HashSet;
+import java.util.Set;
 import org.apache.beam.sdk.transforms.Flatten;
 import org.apache.beam.sdk.util.WindowedValue;
 import org.apache.beam.sdk.values.PValue;
@@ -33,16 +35,20 @@ public class FlattenTransformTranslator<T> implements TransformTranslator<Flatte
   public void translate(PipelineTranslator pipelineTranslator, Flatten.PCollections<T> transform) {
     Collection<PValue> values = pipelineTranslator.getInputs(transform).values();
     KStream<Object, WindowedValue<T>> flatten = null;
+    Set<String> streamSources = new HashSet<>();
     for (PValue value : values) {
       if (flatten == null) {
         flatten = pipelineTranslator.getStream(value);
       } else {
         flatten.merge(pipelineTranslator.getStream(value));
       }
+      streamSources.addAll(pipelineTranslator.getStreamSources(value));
     }
     if (flatten == null) {
-      throw new IllegalArgumentException("Empty flatten not supported.");
+      throw new IllegalArgumentException("empty flatten not supported");
     }
-    pipelineTranslator.putStream(pipelineTranslator.getOutput(transform), flatten);
+    PValue output = pipelineTranslator.getOutput(transform);
+    pipelineTranslator.putStream(output, flatten);
+    pipelineTranslator.putStreamSources(output, streamSources);
   }
 }

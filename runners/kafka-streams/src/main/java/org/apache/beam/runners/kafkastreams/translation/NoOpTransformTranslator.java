@@ -20,7 +20,6 @@ package org.apache.beam.runners.kafkastreams.translation;
 import org.apache.beam.runners.kafkastreams.KafkaStreamsRunner;
 import org.apache.beam.sdk.transforms.PTransform;
 import org.apache.beam.sdk.values.PValue;
-import org.slf4j.LoggerFactory;
 
 /**
  * Kafka Streams translator that does nothing but add the input stream as the output stream.
@@ -32,9 +31,9 @@ public class NoOpTransformTranslator implements TransformTranslator<PTransform<P
   @Override
   public void translate(
       PipelineTranslator pipelineTranslator, PTransform<PValue, PValue> transform) {
-    LoggerFactory.getLogger(getClass()).error("Translating NoOp {}", transform);
-    pipelineTranslator.putStream(
-        pipelineTranslator.getOutput(transform),
-        pipelineTranslator.getStream(pipelineTranslator.getInput(transform)));
+    PValue input = pipelineTranslator.getInput(transform);
+    PValue output = pipelineTranslator.getOutput(transform);
+    pipelineTranslator.putStream(output, pipelineTranslator.getStream(input));
+    pipelineTranslator.putStreamSources(output, pipelineTranslator.getStreamSources(input));
   }
 }

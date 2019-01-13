@@ -48,7 +48,6 @@ import org.junit.Assert;
 import org.junit.Before;
 import org.junit.ClassRule;
 import org.junit.Test;
-import org.slf4j.LoggerFactory;
 
 /** JUnit Test for the {@link KafkaStreamsRunner}. */
 public class KafkaStreamsRunnerTest {
@@ -106,8 +105,6 @@ public class KafkaStreamsRunnerTest {
 
   @Test
   public void testReadWrite() throws ExecutionException, InterruptedException, IOException {
-    LoggerFactory.getLogger(KafkaStreamsRunnerTest.class)
-        .error("testReadWrite topicOne: {}", topicOne);
     KafkaStreamsPipelineOptions pipelineOptions =
         PipelineOptionsFactory.create().as(KafkaStreamsPipelineOptions.class);
     pipelineOptions.setRunner(KafkaStreamsRunner.class);
@@ -145,8 +142,6 @@ public class KafkaStreamsRunnerTest {
 
   @Test
   public void testGroupByKey() throws ExecutionException, InterruptedException, IOException {
-    LoggerFactory.getLogger(KafkaStreamsRunnerTest.class)
-        .error("testGroupByKey topicOne: {}", topicOne);
     KafkaStreamsPipelineOptions pipelineOptions =
         PipelineOptionsFactory.create().as(KafkaStreamsPipelineOptions.class);
     pipelineOptions.setRunner(KafkaStreamsRunner.class);
@@ -192,7 +187,15 @@ public class KafkaStreamsRunnerTest {
         IntegrationTestUtils.waitUntilMinKeyValueRecordsReceived(
             consumerConfiguration, topicTwo, 2);
     Collections.sort(
-        keyValues, (keyValueOne, keyValueTwo) -> keyValueOne.key.compareTo(keyValueTwo.key));
+        keyValues,
+        (keyValueOne, keyValueTwo) -> {
+          int keyCompare = keyValueOne.key.compareTo(keyValueTwo.key);
+          if (keyCompare == 0) {
+            return keyValueOne.value.compareTo(keyValueTwo.value);
+          } else {
+            return keyCompare;
+          }
+        });
     Assert.assertEquals(2, keyValues.size());
     Assert.assertEquals(KeyValue.pair("KEY_ONE", 3), keyValues.get(0));
     Assert.assertEquals(KeyValue.pair("KEY_TWO", 5), keyValues.get(1));

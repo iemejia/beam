@@ -116,7 +116,9 @@ public class ReadTransformTranslator<
 
     KStream<Bytes, WindowedValue<OutputT>> outputStream =
         (KStream<Bytes, WindowedValue<OutputT>>) (KStream<?, ?>) readStreams[0];
-    pipelineTranslator.putStream(pipelineTranslator.getOutput(transform), outputStream);
+    PCollection<OutputT> output = pipelineTranslator.getOutput(transform);
+    pipelineTranslator.putStream(output, outputStream);
+    pipelineTranslator.putStreamSources(output, Collections.singleton(topic));
 
     KStream<Integer, KV<UnboundedSource<OutputT, CheckpointMarkT>, CheckpointMarkT>>
         unboundedSourceStream =

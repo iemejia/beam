@@ -19,10 +19,13 @@ package org.apache.beam.runners.kafkastreams.translation;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ExecutionException;
+import java.util.stream.Collectors;
 import org.apache.beam.runners.core.DoFnRunner;
 import org.apache.beam.runners.core.DoFnRunners;
 import org.apache.beam.runners.core.GroupAlsoByWindowViaWindowSetNewDoFn;
@@ -75,9 +78,9 @@ import org.joda.time.Instant;
 
 /**
  * Kafka Streams translator for the Beam {@link GroupByKey} primitive. Uses {@link
- * KStream#through(String, Produced)} to groupByKeyOnly, then uses the GroupAlsoByWindow {@link
- * Transformer} to groupAlsoByWindow, utilizing a {@link StateStore} for holding aggregated data for
- * the key and a {@link Punctuator} for identifying when triggers are ready.
+ * KStream#through(String, Produced)} to groupByKeyOnly, then uses the {@link GroupAlsoByWindow
+ * GroupAlsoByWindow Transformer} to groupAlsoByWindow, utilizing a {@link StateStore} for holding
+ * aggregated data for the key and a {@link Punctuator} for identifying when triggers are ready.
  */
 public class GroupByKeyTransformTranslator<K, V, W extends BoundedWindow>
     implements TransformTranslator<GroupByKey<K, V>> {
@@ -103,6 +106,7 @@ public class GroupByKeyTransformTranslator<K, V, W extends BoundedWindow>
     WindowingStrategy<?, W> windowingStrategy =
         (WindowingStrategy<?, W>) input.getWindowingStrategy();
     TupleTag<KV<K, Iterable<V>>> outputTag = pipelineTranslator.getOutputTag(transform);
+    Set<String> streamSources = pipelineTranslator.getStreamSources(input);
 
     KStream<Object, WindowedValue<KV<K, V>>> stream = pipelineTranslator.getStream(input);
 
@@ -146,7 +150,9 @@ public class GroupByKeyTransformTranslator<K, V, W extends BoundedWindow>
     addStateStores(pipelineTranslator, keyCoder, valueCoder);
     KStream<Object, WindowedValue<KV<K, Iterable<V>>>> groupAlsoByWindow =
         groupByKeyKeyedWorkItemStream.transform(
-            () -> new GroupAlsoByWindow(keyCoder, valueCoder, outputTag, windowingStrategy),
+            () ->
+                new GroupAlsoByWindow(
+                    keyCoder, valueCoder, outputTag, windowingStrategy, streamSources),
             BUF,
             CLOSED,
             COUNT,
@@ -156,7 +162,9 @@ public class GroupByKeyTransformTranslator<K, V, W extends BoundedWindow>
             PANE,
             KTimerInternals.TIMER_INTERNALS);
 
-    pipelineTranslator.putStream(pipelineTranslator.getOutput(transform), groupAlsoByWindow);
+    PCollection<KV<K, Iterable<V>>> output = pipelineTranslator.getOutput(transform);
+    pipelineTranslator.putStream(output, groupAlsoByWindow);
+    pipelineTranslator.putStreamSources(output, streamSources);
   }
 
   private void createTopicIfNeeded(KafkaStreamsPipelineOptions pipelineOptions, String topic) {
@@ -260,6 +268,7 @@ public class GroupByKeyTransformTranslator<K, V, W extends BoundedWindow>
     private final Coder<V> valueCoder;
     private final TupleTag<KV<K, Iterable<V>>> mainOutputTag;
     private final WindowingStrategy<?, W> windowingStrategy;
+    private final Map<String, Instant> streamSourceWatermarks;
 
     private ProcessorContext processorContext;
     private KStateInternals<K> stateInternals;
@@ -271,11 +280,17 @@ public class GroupByKeyTransformTranslator<K, V, W extends BoundedWindow>
         Coder<K> keyCoder,
         Coder<V> valueCoder,
         TupleTag<KV<K, Iterable<V>>> mainOutputTag,
-        WindowingStrategy<?, W> windowingStrategy) {
+        WindowingStrategy<?, W> windowingStrategy,
+        Set<String> streamSources) {
       this.keyCoder = keyCoder;
       this.valueCoder = valueCoder;
       this.mainOutputTag = mainOutputTag;
       this.windowingStrategy = windowingStrategy;
+      this.streamSourceWatermarks =
+          streamSources
+              .stream()
+              .collect(
+                  Collectors.toMap(string -> string, string -> BoundedWindow.TIMESTAMP_MIN_VALUE));
     }
 
     @Override
@@ -315,6 +330,8 @@ public class GroupByKeyTransformTranslator<K, V, W extends BoundedWindow>
     @Override
     public KeyValue<Object, WindowedValue<KV<K, Iterable<V>>>> transform(
         Object object, WindowedValue<KeyedWorkItem<K, V>> windowedValue) {
+      streamSourceWatermarks.put(
+          processorContext.topic(), new Instant(processorContext.timestamp()));
       key = windowedValue.getValue().key();
       doFnRunner.startBundle();
       doFnRunner.processElement(windowedValue);
@@ -338,8 +355,13 @@ public class GroupByKeyTransformTranslator<K, V, W extends BoundedWindow>
 
       @Override
       public void punctuate(long timestamp) {
-        // TODO: Advance other times.
+        Instant previousInputWatermarkTime = timerInternals.currentInputWatermarkTime();
+        timerInternals.advanceInputWatermarkTime(
+            streamSourceWatermarks.values().stream().min(Comparator.naturalOrder()).get());
+        timerInternals.advanceOutputWatermarkTime(previousInputWatermarkTime);
         timerInternals.advanceProcessingTime(new Instant(timestamp));
+        // TODO: Get punctuateInterval from pipelineOptions.
+        timerInternals.advanceSynchronizedProcessingTime(new Instant(timestamp - 1000));
         Map<K, List<TimerData>> timersWorkItems = new HashMap<>();
         for (KV<K, TimerData> keyedTimerData : timerInternals.getFireableTimers()) {
           K key = keyedTimerData.getKey();

@@ -188,7 +188,7 @@ public class InMemoryTimerInternals implements TimerInternals {
   }
 
   /** Advances input watermark to the given value. */
-  public void advanceInputWatermark(Instant newInputWatermark) throws Exception {
+  public void advanceInputWatermark(Instant newInputWatermark) {
     checkNotNull(newInputWatermark);
     checkState(
         !newInputWatermark.isBefore(inputWatermarkTime),
@@ -232,7 +232,7 @@ public class InMemoryTimerInternals implements TimerInternals {
   }
 
   /** Advances processing time to the given value. */
-  public void advanceProcessingTime(Instant newProcessingTime) throws Exception {
+  public void advanceProcessingTime(Instant newProcessingTime) {
     checkNotNull(newProcessingTime);
     checkState(
         !newProcessingTime.isBefore(processingTime),
@@ -248,8 +248,7 @@ public class InMemoryTimerInternals implements TimerInternals {
   }
 
   /** Advances synchronized processing time to the given value. */
-  public void advanceSynchronizedProcessingTime(Instant newSynchronizedProcessingTime)
-      throws Exception {
+  public void advanceSynchronizedProcessingTime(Instant newSynchronizedProcessingTime) {
     checkNotNull(newSynchronizedProcessingTime);
     checkState(
         !newSynchronizedProcessingTime.isBefore(synchronizedProcessingTime),
