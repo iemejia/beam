@@ -17,22 +17,18 @@
  */
 package org.apache.beam.runners.kafkastreams.translation;
 
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
-import org.apache.beam.runners.core.construction.PTransformMatchers;
 import org.apache.beam.runners.core.construction.PTransformTranslation;
-import org.apache.beam.runners.core.construction.SplittableParDo;
 import org.apache.beam.runners.core.construction.TransformInputs;
 import org.apache.beam.runners.kafkastreams.KafkaStreamsPipelineOptions;
 import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.coders.CoderRegistry;
 import org.apache.beam.sdk.runners.AppliedPTransform;
-import org.apache.beam.sdk.runners.PTransformOverride;
 import org.apache.beam.sdk.runners.TransformHierarchy;
 import org.apache.beam.sdk.transforms.PTransform;
 import org.apache.beam.sdk.util.WindowedValue;
@@ -93,10 +89,6 @@ public class PipelineTranslator extends Pipeline.PipelineVisitor.Defaults {
 
   public StreamsBuilder translate() {
     if (!translated) {
-      pipeline.replaceAll(
-          ImmutableList.of(
-              PTransformOverride.of(
-                  PTransformMatchers.splittableParDo(), new SplittableParDo.OverrideFactory<>())));
       pipeline.traverseTopologically(this);
       translated = true;
     }

@@ -56,7 +56,8 @@ public class KStateInternalsTest {
     stateStores.put(COMBINING, new MockKeyValueStore<String, Map<String, Integer>>());
     stateStores.put(COMBINING_WITH_CONTEXT, new MockKeyValueStore<String, Map<String, Integer>>());
     stateStores.put(WATERMARK, new MockKeyValueStore<String, Map<String, Instant>>());
-    stateInternals = KStateInternals.<String>of(new MockProcessorContext(stateStores)).withKey(KEY);
+    stateInternals =
+        KStateInternals.<String>of("", new MockProcessorContext(stateStores)).withKey(KEY);
   }
 
   @Test

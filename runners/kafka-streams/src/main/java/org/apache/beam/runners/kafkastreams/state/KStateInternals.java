@@ -50,15 +50,17 @@ import org.joda.time.Instant;
  */
 public class KStateInternals<K> implements StateInternals {
 
-  public static <K> KStateInternals<K> of(ProcessorContext processorContext) {
-    return new KStateInternals<K>(processorContext);
+  public static <K> KStateInternals<K> of(String statePrefix, ProcessorContext processorContext) {
+    return new KStateInternals<K>(statePrefix, processorContext);
   }
 
+  private final String statePrefix;
   private final ProcessorContext processorContext;
 
   private K key;
 
-  private KStateInternals(ProcessorContext processorContext) {
+  private KStateInternals(String statePrefix, ProcessorContext processorContext) {
+    this.statePrefix = statePrefix;
     this.processorContext = processorContext;
   }
 
@@ -92,7 +94,9 @@ public class KStateInternals<K> implements StateInternals {
     @Override
     public <V> ValueState<V> bindValue(String id, StateSpec<ValueState<V>> spec, Coder<V> coder) {
       return new KValueState<K, V>(
-          key, namespace, (KeyValueStore<KV<K, String>, V>) processorContext.getStateStore(id));
+          key,
+          namespace,
+          (KeyValueStore<KV<K, String>, V>) processorContext.getStateStore(statePrefix + id));
     }
 
     @SuppressWarnings("unchecked")
@@ -101,7 +105,7 @@ public class KStateInternals<K> implements StateInternals {
       return new KBagState<K, V>(
           key,
           namespace,
-          (KeyValueStore<KV<K, String>, List<V>>) processorContext.getStateStore(id));
+          (KeyValueStore<KV<K, String>, List<V>>) processorContext.getStateStore(statePrefix + id));
     }
 
     @SuppressWarnings("unchecked")
@@ -110,7 +114,7 @@ public class KStateInternals<K> implements StateInternals {
       return new KSetState<K, V>(
           key,
           namespace,
-          (KeyValueStore<KV<K, String>, Set<V>>) processorContext.getStateStore(id));
+          (KeyValueStore<KV<K, String>, Set<V>>) processorContext.getStateStore(statePrefix + id));
     }
 
     @SuppressWarnings("unchecked")
@@ -123,7 +127,8 @@ public class KStateInternals<K> implements StateInternals {
       return new KMapState<K, KeyT, ValueT>(
           key,
           namespace,
-          (KeyValueStore<KV<K, String>, Map<KeyT, ValueT>>) processorContext.getStateStore(id));
+          (KeyValueStore<KV<K, String>, Map<KeyT, ValueT>>)
+              processorContext.getStateStore(statePrefix + id));
     }
 
     @SuppressWarnings("unchecked")
@@ -136,7 +141,7 @@ public class KStateInternals<K> implements StateInternals {
       return new KCombiningState<K, InputT, AccumT, OutputT>(
           key,
           namespace,
-          (KeyValueStore<KV<K, String>, AccumT>) processorContext.getStateStore(id),
+          (KeyValueStore<KV<K, String>, AccumT>) processorContext.getStateStore(statePrefix + id),
           combineFn);
     }
 
@@ -151,7 +156,7 @@ public class KStateInternals<K> implements StateInternals {
       return new KCombiningWithContextState<K, InputT, AccumT, OutputT>(
           key,
           namespace,
-          (KeyValueStore<KV<K, String>, AccumT>) processorContext.getStateStore(id),
+          (KeyValueStore<KV<K, String>, AccumT>) processorContext.getStateStore(statePrefix + id),
           combineFn,
           CombineContextFactory.createFromStateContext(stateContext));
     }
@@ -163,7 +168,7 @@ public class KStateInternals<K> implements StateInternals {
       return new KWatermarkHoldState<K>(
           key,
           namespace,
-          (KeyValueStore<KV<K, String>, Instant>) processorContext.getStateStore(id),
+          (KeyValueStore<KV<K, String>, Instant>) processorContext.getStateStore(statePrefix + id),
           timestampCombiner);
     }
   }

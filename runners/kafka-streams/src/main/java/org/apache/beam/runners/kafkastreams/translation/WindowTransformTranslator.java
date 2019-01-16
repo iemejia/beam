@@ -19,6 +19,7 @@ package org.apache.beam.runners.kafkastreams.translation;
 
 import com.google.common.collect.Iterables;
 import java.util.stream.Collectors;
+import org.apache.beam.runners.core.construction.WindowIntoTranslation;
 import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
 import org.apache.beam.sdk.transforms.windowing.Window;
 import org.apache.beam.sdk.transforms.windowing.WindowFn;
@@ -28,7 +29,6 @@ import org.apache.beam.sdk.values.PValue;
 import org.apache.kafka.streams.kstream.KStream;
 import org.apache.kafka.streams.kstream.ValueMapper;
 import org.joda.time.Instant;
-import org.slf4j.LoggerFactory;
 
 /**
  * Kafka Streams translator for the Beam {@link Window} primitive. Uses {@link
@@ -40,10 +40,11 @@ public class WindowTransformTranslator<T, W extends BoundedWindow>
 
   @Override
   public void translate(PipelineTranslator pipelineTranslator, Window.Assign<T> transform) {
-    LoggerFactory.getLogger(getClass()).error("Translating Window {}", transform);
     PValue input = pipelineTranslator.getInput(transform);
     @SuppressWarnings("unchecked")
-    WindowFn<T, W> windowFn = (WindowFn<T, W>) transform.getWindowFn();
+    WindowFn<T, W> windowFn =
+        (WindowFn<T, W>)
+            WindowIntoTranslation.getWindowFn(pipelineTranslator.getCurrentTransform());
     KStream<Object, WindowedValue<T>> stream = pipelineTranslator.getStream(input);
     KStream<Object, WindowedValue<T>> windowedStream =
         stream.flatMapValues(

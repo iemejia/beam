@@ -42,13 +42,14 @@ import org.joda.time.Instant;
  */
 public class KTimerInternals<K, W extends BoundedWindow> implements TimerInternals {
 
-  public static final String TIMER_INTERNALS = "TIMER_INTERNALS";
+  public static final String TIMERS = "timers";
 
   @SuppressWarnings("unchecked")
   public static <K, W extends BoundedWindow> KTimerInternals<K, W> of(
-      ProcessorContext processorContext, Coder<W> windowCoder) {
+      String statePrefix, ProcessorContext processorContext, Coder<W> windowCoder) {
     return new KTimerInternals<>(
-        (KeyValueStore<String, KV<K, Instant>>) processorContext.getStateStore(TIMER_INTERNALS),
+        (KeyValueStore<String, KV<K, Instant>>)
+            processorContext.getStateStore(statePrefix + TIMERS),
         windowCoder);
   }
 

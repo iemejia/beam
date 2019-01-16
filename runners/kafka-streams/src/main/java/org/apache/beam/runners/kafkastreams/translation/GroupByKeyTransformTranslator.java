@@ -24,7 +24,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
 import org.apache.beam.runners.core.DoFnRunner;
 import org.apache.beam.runners.core.DoFnRunners;
@@ -62,10 +61,7 @@ import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.TupleTag;
 import org.apache.beam.sdk.values.WindowingStrategy;
-import org.apache.kafka.clients.admin.AdminClient;
-import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.streams.KeyValue;
-import org.apache.kafka.streams.StreamsConfig;
 import org.apache.kafka.streams.kstream.KStream;
 import org.apache.kafka.streams.kstream.Produced;
 import org.apache.kafka.streams.kstream.Transformer;
@@ -79,8 +75,9 @@ import org.joda.time.Instant;
 /**
  * Kafka Streams translator for the Beam {@link GroupByKey} primitive. Uses {@link
  * KStream#through(String, Produced)} to groupByKeyOnly, then uses the {@link GroupAlsoByWindow
- * GroupAlsoByWindow Transformer} to groupAlsoByWindow, utilizing a {@link StateStore} for holding
- * aggregated data for the key and a {@link Punctuator} for identifying when triggers are ready.
+ * GroupAlsoByWindow Transformer} to groupAlsoByWindow, utilizing {@link StateStore StateStores} for
+ * holding aggregated data for the key and a {@link Punctuator} for identifying when triggers are
+ * ready.
  */
 public class GroupByKeyTransformTranslator<K, V, W extends BoundedWindow>
     implements TransformTranslator<GroupByKey<K, V>> {
@@ -93,16 +90,16 @@ public class GroupByKeyTransformTranslator<K, V, W extends BoundedWindow>
   private static final String HOLD = "hold";
   private static final String PANE = "pane";
 
+  @SuppressWarnings("unchecked")
   @Override
   public void translate(PipelineTranslator pipelineTranslator, GroupByKey<K, V> transform) {
     KafkaStreamsPipelineOptions pipelineOptions = pipelineTranslator.getPipelineOptions();
-    String topic = Admin.topic(pipelineTranslator.getCurrentTransform());
+    String applicationId = Admin.applicationId(pipelineOptions);
+    String uniqueName = Admin.uniqueName(pipelineOptions, pipelineTranslator.getCurrentTransform());
     PCollection<KV<K, V>> input = pipelineTranslator.getInput(transform);
-    @SuppressWarnings("unchecked")
     KvCoder<K, V> coder = (KvCoder<K, V>) input.getCoder();
     Coder<K> keyCoder = coder.getKeyCoder();
     Coder<V> valueCoder = coder.getValueCoder();
-    @SuppressWarnings("unchecked")
     WindowingStrategy<?, W> windowingStrategy =
         (WindowingStrategy<?, W>) input.getWindowingStrategy();
     TupleTag<KV<K, Iterable<V>>> outputTag = pipelineTranslator.getOutputTag(transform);
@@ -121,10 +118,11 @@ public class GroupByKeyTransformTranslator<K, V, W extends BoundedWindow>
                         value.getWindows(),
                         value.getPane())));
 
-    createTopicIfNeeded(pipelineOptions, topic);
+    String topic = applicationId + "-" + uniqueName;
+    Admin.createTopicIfNeeded(pipelineOptions, topic);
     KStream<K, WindowedValue<V>> groupByKeyOnlyStream =
         keyStream.through(
-            Admin.topic(pipelineTranslator.getCurrentTransform()),
+            topic,
             Produced.with(
                 CoderSerde.of(coder.getKeyCoder()),
                 CoderSerde.of(
@@ -147,116 +145,104 @@ public class GroupByKeyTransformTranslator<K, V, W extends BoundedWindow>
               return keyedWorkItems;
             });
 
-    addStateStores(pipelineTranslator, keyCoder, valueCoder);
     KStream<Object, WindowedValue<KV<K, Iterable<V>>>> groupAlsoByWindow =
         groupByKeyKeyedWorkItemStream.transform(
             () ->
                 new GroupAlsoByWindow(
-                    keyCoder, valueCoder, outputTag, windowingStrategy, streamSources),
-            BUF,
-            CLOSED,
-            COUNT,
-            DELAYED,
-            EXTRA,
-            HOLD,
-            PANE,
-            KTimerInternals.TIMER_INTERNALS);
+                    uniqueName + "-",
+                    keyCoder,
+                    valueCoder,
+                    outputTag,
+                    windowingStrategy,
+                    streamSources),
+            stateStores(pipelineTranslator, uniqueName, keyCoder, valueCoder));
 
     PCollection<KV<K, Iterable<V>>> output = pipelineTranslator.getOutput(transform);
     pipelineTranslator.putStream(output, groupAlsoByWindow);
     pipelineTranslator.putStreamSources(output, streamSources);
   }
 
-  private void createTopicIfNeeded(KafkaStreamsPipelineOptions pipelineOptions, String topic) {
-    try (AdminClient adminClient = Admin.adminClient(pipelineOptions)) {
-      if (adminClient.listTopics().names().get().contains(topic)) {
-        return;
-      }
-      adminClient
-          .createTopics(
-              Collections.singleton(
-                  new NewTopic(
-                      topic,
-                      pipelineOptions.getNumPartitions(),
-                      new StreamsConfig(pipelineOptions.getProperties())
-                          .getInt(StreamsConfig.REPLICATION_FACTOR_CONFIG)
-                          .shortValue())))
-          .all()
-          .get();
-    } catch (ExecutionException | InterruptedException e) {
-      throw new RuntimeException(e);
-    }
-  }
-
-  private void addStateStores(
-      PipelineTranslator pipelineTranslator, Coder<K> keyCoder, Coder<V> valueCoder) {
+  private String[] stateStores(
+      PipelineTranslator pipelineTranslator,
+      String uniqueName,
+      Coder<K> keyCoder,
+      Coder<V> valueCoder) {
     // SystemReduceFn.BUFFER_NAME
+    String buf = uniqueName + "-" + BUF;
     pipelineTranslator
         .getStreamsBuilder()
         .addStateStore(
             Stores.keyValueStoreBuilder(
-                Stores.persistentKeyValueStore(BUF),
+                Stores.persistentKeyValueStore(buf),
                 CoderSerde.of(KvCoder.of(keyCoder, StringUtf8Coder.of())),
                 CoderSerde.of(ListCoder.of(valueCoder))));
     // TriggerStateMachineRunner.FINISHED_BITS_TAG
+    String closed = uniqueName + "-" + CLOSED;
     pipelineTranslator
         .getStreamsBuilder()
         .addStateStore(
             Stores.keyValueStoreBuilder(
-                Stores.persistentKeyValueStore(CLOSED),
+                Stores.persistentKeyValueStore(closed),
                 CoderSerde.of(KvCoder.of(keyCoder, StringUtf8Coder.of())),
                 CoderSerde.of(BitSetCoder.of())));
     // NonEmptyPanes.GeneralNonEmptyPanes.PANE_ADDITIONS_TAG
+    String count = uniqueName + "-" + COUNT;
     pipelineTranslator
         .getStreamsBuilder()
         .addStateStore(
             Stores.keyValueStoreBuilder(
-                Stores.persistentKeyValueStore(COUNT),
+                Stores.persistentKeyValueStore(count),
                 CoderSerde.of(KvCoder.of(keyCoder, StringUtf8Coder.of())),
                 CoderSerde.of(
                     Sum.ofLongs()
                         .getAccumulatorCoder(
                             pipelineTranslator.getCoderRegistry(), VarLongCoder.of()))));
     // AfterDelayFromFirstElementStateMachine.DELAYED_UNTIL_TAG
+    String delayed = uniqueName + "-" + DELAYED;
     pipelineTranslator
         .getStreamsBuilder()
         .addStateStore(
             Stores.keyValueStoreBuilder(
-                Stores.persistentKeyValueStore(DELAYED),
+                Stores.persistentKeyValueStore(delayed),
                 CoderSerde.of(KvCoder.of(keyCoder, StringUtf8Coder.of())),
                 CoderSerde.of(new Combine.HolderCoder<>(InstantCoder.of()))));
     // WatermarkHold.EXTRA_HOLD_TAG
+    String extra = uniqueName + "-" + EXTRA;
     pipelineTranslator
         .getStreamsBuilder()
         .addStateStore(
             Stores.keyValueStoreBuilder(
-                Stores.persistentKeyValueStore(EXTRA),
+                Stores.persistentKeyValueStore(extra),
                 CoderSerde.of(KvCoder.of(keyCoder, StringUtf8Coder.of())),
                 CoderSerde.of(InstantCoder.of())));
     // WatermarkHold.watermarkHoldTagForTimestampCombiner(TimestampCombiner)
+    String hold = uniqueName + "-" + HOLD;
     pipelineTranslator
         .getStreamsBuilder()
         .addStateStore(
             Stores.keyValueStoreBuilder(
-                Stores.persistentKeyValueStore(HOLD),
+                Stores.persistentKeyValueStore(hold),
                 CoderSerde.of(KvCoder.of(keyCoder, StringUtf8Coder.of())),
                 CoderSerde.of(InstantCoder.of())));
     // PaneInfoTracker.PANE_INFO_TAG
+    String pane = uniqueName + "-" + PANE;
     pipelineTranslator
         .getStreamsBuilder()
         .addStateStore(
             Stores.keyValueStoreBuilder(
-                Stores.persistentKeyValueStore(PANE),
+                Stores.persistentKeyValueStore(pane),
                 CoderSerde.of(KvCoder.of(keyCoder, StringUtf8Coder.of())),
                 CoderSerde.of(PaneInfoCoder.INSTANCE)));
     // KTimerInternals.TIMER_INTERNALS
+    String timers = uniqueName + "-" + KTimerInternals.TIMERS;
     pipelineTranslator
         .getStreamsBuilder()
         .addStateStore(
             Stores.keyValueStoreBuilder(
-                Stores.persistentKeyValueStore(KTimerInternals.TIMER_INTERNALS),
+                Stores.persistentKeyValueStore(timers),
                 CoderSerde.of(StringUtf8Coder.of()),
                 CoderSerde.of(KvCoder.of(keyCoder, InstantCoder.of()))));
+    return new String[] {buf, closed, count, delayed, extra, hold, pane, timers};
   }
 
   private class GroupAlsoByWindow
@@ -264,6 +250,7 @@ public class GroupByKeyTransformTranslator<K, V, W extends BoundedWindow>
           Object, WindowedValue<KeyedWorkItem<K, V>>,
           KeyValue<Object, WindowedValue<KV<K, Iterable<V>>>>> {
 
+    private final String statePrefix;
     private final Coder<K> keyCoder;
     private final Coder<V> valueCoder;
     private final TupleTag<KV<K, Iterable<V>>> mainOutputTag;
@@ -277,11 +264,13 @@ public class GroupByKeyTransformTranslator<K, V, W extends BoundedWindow>
     private K key;
 
     private GroupAlsoByWindow(
+        String statePrefix,
         Coder<K> keyCoder,
         Coder<V> valueCoder,
         TupleTag<KV<K, Iterable<V>>> mainOutputTag,
         WindowingStrategy<?, W> windowingStrategy,
         Set<String> streamSources) {
+      this.statePrefix = statePrefix;
       this.keyCoder = keyCoder;
       this.valueCoder = valueCoder;
       this.mainOutputTag = mainOutputTag;
@@ -298,9 +287,10 @@ public class GroupByKeyTransformTranslator<K, V, W extends BoundedWindow>
       this.processorContext = processorContext;
       // TODO: Get punctuateInterval from pipelineOptions.
       this.processorContext.schedule(1000, PunctuationType.WALL_CLOCK_TIME, new GABWPunctuator());
-      stateInternals = KStateInternals.of(processorContext);
+      stateInternals = KStateInternals.of(statePrefix, processorContext);
       timerInternals =
-          KTimerInternals.of(processorContext, windowingStrategy.getWindowFn().windowCoder());
+          KTimerInternals.of(
+              statePrefix, processorContext, windowingStrategy.getWindowFn().windowCoder());
       DoFnRunners.OutputManager outputManager = new GABWOutputManger();
       SystemReduceFn<K, V, ?, Iterable<V>, W> reduceFn = SystemReduceFn.buffering(valueCoder);
       DoFn<KeyedWorkItem<K, V>, KV<K, Iterable<V>>> doFn =
@@ -316,7 +306,7 @@ public class GroupByKeyTransformTranslator<K, V, W extends BoundedWindow>
           DoFnRunners.simpleRunner(
               PipelineOptionsFactory.create(),
               doFn,
-              NullSideInputReader.of(Collections.emptyList()),
+              NullSideInputReader.empty(),
               outputManager,
               mainOutputTag,
               Collections.emptyList(),

@@ -29,7 +29,6 @@ import org.apache.beam.runners.core.DoFnRunners;
 import org.apache.beam.runners.core.InMemoryTimerInternals;
 import org.apache.beam.runners.core.StateInternals;
 import org.apache.beam.runners.core.StateNamespace;
-import org.apache.beam.runners.core.StateNamespaces;
 import org.apache.beam.runners.core.StateNamespaces.GlobalNamespace;
 import org.apache.beam.runners.core.StateNamespaces.WindowAndTriggerNamespace;
 import org.apache.beam.runners.core.StateNamespaces.WindowNamespace;
@@ -37,10 +36,10 @@ import org.apache.beam.runners.core.StepContext;
 import org.apache.beam.runners.core.TimerInternals;
 import org.apache.beam.runners.core.TimerInternals.TimerData;
 import org.apache.beam.runners.core.construction.ParDoTranslation;
+import org.apache.beam.runners.kafkastreams.KafkaStreamsPipelineOptions;
 import org.apache.beam.runners.kafkastreams.admin.Admin;
 import org.apache.beam.runners.kafkastreams.serde.CoderSerde;
 import org.apache.beam.runners.kafkastreams.sideinput.KSideInputReader;
-import org.apache.beam.runners.kafkastreams.sideinput.KSideInputReader.KSideInput;
 import org.apache.beam.runners.kafkastreams.state.KStateInternals;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.coders.KvCoder;
@@ -67,23 +66,16 @@ import org.apache.beam.sdk.values.PValue;
 import org.apache.beam.sdk.values.TupleTag;
 import org.apache.beam.sdk.values.TupleTagList;
 import org.apache.beam.sdk.values.WindowingStrategy;
-import org.apache.kafka.common.serialization.Serde;
-import org.apache.kafka.common.serialization.Serdes;
-import org.apache.kafka.common.utils.Bytes;
 import org.apache.kafka.streams.KeyValue;
-import org.apache.kafka.streams.kstream.Consumed;
 import org.apache.kafka.streams.kstream.GlobalKTable;
 import org.apache.kafka.streams.kstream.KStream;
-import org.apache.kafka.streams.kstream.Materialized;
 import org.apache.kafka.streams.kstream.Predicate;
-import org.apache.kafka.streams.kstream.Produced;
 import org.apache.kafka.streams.kstream.Transformer;
 import org.apache.kafka.streams.kstream.TransformerSupplier;
 import org.apache.kafka.streams.processor.ProcessorContext;
 import org.apache.kafka.streams.processor.PunctuationType;
 import org.apache.kafka.streams.processor.Punctuator;
 import org.apache.kafka.streams.processor.StateStore;
-import org.apache.kafka.streams.state.KeyValueStore;
 import org.apache.kafka.streams.state.StoreBuilder;
 import org.apache.kafka.streams.state.Stores;
 import org.joda.time.Instant;
@@ -94,7 +86,7 @@ import org.joda.time.Instant;
  * then uses {@link KStream#branch(Predicate[])} to create a {@link KStream} for each output {@link
  * TupleTag}. Creates a {@link StateStore} for each {@link StateSpec} in the {@link DoFn DoFn's}
  * stateDeclarations. Creates a {@link GlobalKTable} for each side input, backed by a {@link
- * StateStore} that readable by the {@link KSideInputReader}.
+ * StateStore} that is readable by the {@link KSideInputReader}.
  */
 public class ParDoTransformTranslator<InputT, OutputT, W extends BoundedWindow>
     implements TransformTranslator<ParDo.MultiOutput<InputT, OutputT>> {
@@ -104,7 +96,7 @@ public class ParDoTransformTranslator<InputT, OutputT, W extends BoundedWindow>
   public void translate(
       PipelineTranslator pipelineTranslator, ParDo.MultiOutput<InputT, OutputT> transform) {
     try {
-      PipelineOptions pipelineOptions = pipelineTranslator.getPipelineOptions();
+      KafkaStreamsPipelineOptions pipelineOptions = pipelineTranslator.getPipelineOptions();
       PCollection<InputT> input = (PCollection<InputT>) pipelineTranslator.getInput(transform);
       Coder<InputT> inputCoder = input.getCoder();
       WindowingStrategy<?, W> windowingStrategy =
@@ -114,7 +106,6 @@ public class ParDoTransformTranslator<InputT, OutputT, W extends BoundedWindow>
       AppliedPTransform<?, ?, ?> appliedPTransform = pipelineTranslator.getCurrentTransform();
       DoFn<InputT, OutputT> doFn =
           (DoFn<InputT, OutputT>) ParDoTranslation.getDoFn(appliedPTransform);
-      List<PCollectionView<?>> sideInputs = ParDoTranslation.getSideInputs(appliedPTransform);
       TupleTag<OutputT> mainOutputTag =
           (TupleTag<OutputT>) ParDoTranslation.getMainOutputTag(appliedPTransform);
       TupleTagList additionalOutputTags =
@@ -123,23 +114,29 @@ public class ParDoTransformTranslator<InputT, OutputT, W extends BoundedWindow>
 
       KStream<Object, WindowedValue<InputT>> inputStream = pipelineTranslator.getStream(input);
 
-      Map<PCollectionView<?>, KSideInput> preparedSideInputs =
-          prepareSideInputs(pipelineTranslator, sideInputs);
-      // TODO: Add the storeNames from the KSideInputs to the list created in prepareStateStores.
+      String statePrefix =
+          Admin.uniqueName(pipelineOptions, pipelineTranslator.getCurrentTransform()) + "-";
+      Map<PCollectionView<?>, String> sideInputs =
+          sideInputs(
+              pipelineTranslator,
+              pipelineOptions,
+              ParDoTranslation.getSideInputs(appliedPTransform));
+      // TODO: Add the storeNames from the KSideInputs to the list created in stateStores.
       KStream<TupleTag<?>, WindowedValue<?>> taggedOutputStream =
           inputStream.transform(
               () ->
                   new ParDoTransformer(
                       pipelineOptions,
+                      statePrefix,
                       doFn,
-                      preparedSideInputs,
+                      sideInputs,
                       mainOutputTag,
                       additionalOutputTags.getAll(),
                       inputCoder,
                       outputCoders,
                       windowingStrategy,
                       streamSources),
-              prepareStateStores(pipelineTranslator, input.getCoder(), doFn));
+              stateStores(pipelineTranslator, statePrefix, input.getCoder(), doFn));
 
       List<TupleTag<?>> outputTags = additionalOutputTags.and(mainOutputTag).getAll();
       Predicate<TupleTag<?>, WindowedValue<?>>[] predicates =
@@ -166,50 +163,28 @@ public class ParDoTransformTranslator<InputT, OutputT, W extends BoundedWindow>
     }
   }
 
-  private Map<PCollectionView<?>, KSideInputReader.KSideInput> prepareSideInputs(
-      PipelineTranslator pipelineTranslator, List<PCollectionView<?>> sideInputs) {
-    Map<PCollectionView<?>, KSideInputReader.KSideInput> kSideInputs = new HashMap<>();
+  private Map<PCollectionView<?>, String> sideInputs(
+      PipelineTranslator pipelineTranslator,
+      KafkaStreamsPipelineOptions pipelineOptions,
+      List<PCollectionView<?>> sideInputs) {
+    Map<PCollectionView<?>, String> kSideInputs = new HashMap<>();
     for (PCollectionView<?> sideInput : sideInputs) {
-      PCollection<?> collection = sideInput.getPCollection();
-      @SuppressWarnings("unchecked")
-      Coder<BoundedWindow> windowCoder =
-          (Coder<BoundedWindow>) collection.getWindowingStrategy().getWindowFn().windowCoder();
-
-      KStream<Object, WindowedValue<Object>> stream = pipelineTranslator.getStream(collection);
-
-      KStream<String, Object> windowStream =
-          stream.flatMap(
-              (object, windowedValue) -> {
-                return windowedValue
-                    .getWindows()
-                    .stream()
-                    .map(
-                        window ->
-                            KeyValue.pair(
-                                StateNamespaces.window(windowCoder, window).stringKey(),
-                                windowedValue.getValue()))
-                    .collect(Collectors.toList());
-              });
-
-      String topic = Admin.topic(sideInput);
-      String storeName = Admin.storeName(sideInput);
-      @SuppressWarnings("unchecked")
-      Serde<Object> valueSerde = CoderSerde.of((Coder<Object>) collection.getCoder());
-      windowStream.to(topic, Produced.with(Serdes.String(), valueSerde));
-      pipelineTranslator
-          .getStreamsBuilder()
-          .globalTable(
-              topic,
-              Consumed.with(Serdes.String(), valueSerde),
-              Materialized.<String, Object, KeyValueStore<Bytes, byte[]>>as(storeName)
-                  .withCachingEnabled());
-      kSideInputs.put(sideInput, KSideInputReader.KSideInput.of(storeName, windowCoder));
+      kSideInputs.put(
+          sideInput,
+          KSideInputReader.sideInput(
+              pipelineOptions,
+              pipelineTranslator.getStreamsBuilder(),
+              sideInput,
+              pipelineTranslator.getStream(sideInput.getPCollection())));
     }
     return kSideInputs;
   }
 
-  private String[] prepareStateStores(
-      PipelineTranslator pipelineTranslator, Coder<InputT> inputCoder, DoFn<InputT, OutputT> doFn) {
+  private String[] stateStores(
+      PipelineTranslator pipelineTranslator,
+      String statePrefix,
+      Coder<InputT> inputCoder,
+      DoFn<InputT, OutputT> doFn) {
     try {
       Map<String, StateDeclaration> stateDeclarations =
           DoFnSignatures.signatureForDoFn(doFn).stateDeclarations();
@@ -224,42 +199,47 @@ public class ParDoTransformTranslator<InputT, OutputT, W extends BoundedWindow>
                       @Override
                       public StoreBuilder<?> dispatchValue(Coder<?> valueCoder) {
                         return Stores.keyValueStoreBuilder(
-                            Stores.persistentKeyValueStore(stateDeclaration.id()),
-                            CoderSerde.of(KvCoder.of(inputCoder, StringUtf8Coder.of())),
-                            CoderSerde.of(valueCoder));
+                                Stores.persistentKeyValueStore(stateDeclaration.id()),
+                                CoderSerde.of(KvCoder.of(inputCoder, StringUtf8Coder.of())),
+                                CoderSerde.of(valueCoder))
+                            .withCachingEnabled();
                       }
 
                       @Override
                       public StoreBuilder<?> dispatchBag(Coder<?> elementCoder) {
                         return Stores.keyValueStoreBuilder(
-                            Stores.persistentKeyValueStore(stateDeclaration.id()),
-                            CoderSerde.of(KvCoder.of(inputCoder, StringUtf8Coder.of())),
-                            CoderSerde.of(ListCoder.of(elementCoder)));
+                                Stores.persistentKeyValueStore(stateDeclaration.id()),
+                                CoderSerde.of(KvCoder.of(inputCoder, StringUtf8Coder.of())),
+                                CoderSerde.of(ListCoder.of(elementCoder)))
+                            .withCachingEnabled();
                       }
 
                       @Override
                       public StoreBuilder<?> dispatchSet(Coder<?> elementCoder) {
                         return Stores.keyValueStoreBuilder(
-                            Stores.persistentKeyValueStore(stateDeclaration.id()),
-                            CoderSerde.of(KvCoder.of(inputCoder, StringUtf8Coder.of())),
-                            CoderSerde.of(SetCoder.of(elementCoder)));
+                                Stores.persistentKeyValueStore(stateDeclaration.id()),
+                                CoderSerde.of(KvCoder.of(inputCoder, StringUtf8Coder.of())),
+                                CoderSerde.of(SetCoder.of(elementCoder)))
+                            .withCachingEnabled();
                       }
 
                       @Override
                       public StoreBuilder<?> dispatchMap(Coder<?> keyCoder, Coder<?> valueCoder) {
                         return Stores.keyValueStoreBuilder(
-                            Stores.persistentKeyValueStore(stateDeclaration.id()),
-                            CoderSerde.of(KvCoder.of(inputCoder, StringUtf8Coder.of())),
-                            CoderSerde.of(MapCoder.of(keyCoder, valueCoder)));
+                                Stores.persistentKeyValueStore(stateDeclaration.id()),
+                                CoderSerde.of(KvCoder.of(inputCoder, StringUtf8Coder.of())),
+                                CoderSerde.of(MapCoder.of(keyCoder, valueCoder)))
+                            .withCachingEnabled();
                       }
 
                       @Override
                       public StoreBuilder<?> dispatchCombining(
                           CombineFn<?, ?, ?> combineFn, Coder<?> accumCoder) {
                         return Stores.keyValueStoreBuilder(
-                            Stores.persistentKeyValueStore(stateDeclaration.id()),
-                            CoderSerde.of(KvCoder.of(inputCoder, StringUtf8Coder.of())),
-                            CoderSerde.of(accumCoder));
+                                Stores.persistentKeyValueStore(stateDeclaration.id()),
+                                CoderSerde.of(KvCoder.of(inputCoder, StringUtf8Coder.of())),
+                                CoderSerde.of(accumCoder))
+                            .withCachingEnabled();
                       }
                     }));
       }
@@ -274,8 +254,9 @@ public class ParDoTransformTranslator<InputT, OutputT, W extends BoundedWindow>
           Object, WindowedValue<InputT>, KeyValue<TupleTag<?>, WindowedValue<?>>> {
 
     private final PipelineOptions pipelineOptions;
+    private final String statePrefix;
     private final DoFn<InputT, OutputT> doFn;
-    private final Map<PCollectionView<?>, KSideInputReader.KSideInput> sideInputs;
+    private final Map<PCollectionView<?>, String> sideInputs;
     private final TupleTag<OutputT> mainOutputTag;
     private final List<TupleTag<?>> additionalOutputTags;
     private final Coder<InputT> inputCoder;
@@ -292,8 +273,9 @@ public class ParDoTransformTranslator<InputT, OutputT, W extends BoundedWindow>
 
     private ParDoTransformer(
         PipelineOptions pipelineOptions,
+        String statePrefix,
         DoFn<InputT, OutputT> doFn,
-        Map<PCollectionView<?>, KSideInputReader.KSideInput> sideInputs,
+        Map<PCollectionView<?>, String> sideInputs,
         TupleTag<OutputT> mainOutputTag,
         List<TupleTag<?>> additionalOutputTags,
         Coder<InputT> inputCoder,
@@ -301,6 +283,7 @@ public class ParDoTransformTranslator<InputT, OutputT, W extends BoundedWindow>
         WindowingStrategy<?, W> windowingStrategy,
         Set<String> streamSources) {
       this.pipelineOptions = pipelineOptions;
+      this.statePrefix = statePrefix;
       this.doFn = doFn;
       this.sideInputs = sideInputs;
       this.mainOutputTag = mainOutputTag;
@@ -319,8 +302,9 @@ public class ParDoTransformTranslator<InputT, OutputT, W extends BoundedWindow>
     public void init(ProcessorContext processorContext) {
       this.processorContext = processorContext;
       // TODO: Get punctuateInterval from pipelineOptions.
-      this.processorContext.schedule(1000, PunctuationType.WALL_CLOCK_TIME, new ParDoPunctuator());
-      stateInternals = KStateInternals.of(processorContext);
+      this.processorContext.schedule(
+          1000, PunctuationType.WALL_CLOCK_TIME, new ParDoPunctuator(1000));
+      stateInternals = KStateInternals.of(statePrefix, processorContext);
       timerInternals = new InMemoryTimerInternals();
       doFnInvoker = DoFnInvokers.invokerFor(doFn);
       doFnInvoker.invokeSetup();
@@ -366,6 +350,12 @@ public class ParDoTransformTranslator<InputT, OutputT, W extends BoundedWindow>
 
     private class ParDoPunctuator implements Punctuator {
 
+      private final long interval;
+
+      private ParDoPunctuator(long interval) {
+        this.interval = interval;
+      }
+
       @Override
       public void punctuate(long timestamp) {
         Instant previousInputWatermarkTime = timerInternals.currentInputWatermarkTime();
@@ -373,10 +363,38 @@ public class ParDoTransformTranslator<InputT, OutputT, W extends BoundedWindow>
             streamSourceWatermarks.values().stream().min(Comparator.naturalOrder()).get());
         timerInternals.advanceOutputWatermark(previousInputWatermarkTime);
         timerInternals.advanceProcessingTime(new Instant(timestamp));
-        // TODO: Get punctuateInterval from pipelineOptions.
-        timerInternals.advanceSynchronizedProcessingTime(new Instant(timestamp - 1000));
+        timerInternals.advanceSynchronizedProcessingTime(new Instant(timestamp - interval));
+        fireTimers();
         doFnRunner.finishBundle();
         doFnRunner.startBundle();
+      }
+
+      private void fireTimers() {
+        boolean hasFired;
+        do {
+          hasFired = false;
+          TimerInternals.TimerData timer;
+          while ((timer = timerInternals.removeNextEventTimer()) != null) {
+            hasFired = true;
+            fireTimer(timer);
+          }
+          while ((timer = timerInternals.removeNextProcessingTimer()) != null) {
+            hasFired = true;
+            fireTimer(timer);
+          }
+          while ((timer = timerInternals.removeNextSynchronizedProcessingTimer()) != null) {
+            hasFired = true;
+            fireTimer(timer);
+          }
+        } while (hasFired);
+      }
+
+      private void fireTimer(TimerData timerData) {
+        doFnRunner.onTimer(
+            timerData.getTimerId(),
+            window(timerData),
+            timerData.getTimestamp(),
+            timerData.getDomain());
       }
 
       private BoundedWindow window(TimerData timerData) {

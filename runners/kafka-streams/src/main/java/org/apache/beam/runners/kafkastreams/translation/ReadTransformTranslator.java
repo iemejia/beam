@@ -20,7 +20,6 @@ package org.apache.beam.runners.kafkastreams.translation;
 import java.io.IOException;
 import java.util.Collections;
 import java.util.List;
-import java.util.concurrent.ExecutionException;
 import org.apache.beam.runners.core.construction.ReadTranslation;
 import org.apache.beam.runners.core.construction.UnboundedReadFromBoundedSource;
 import org.apache.beam.runners.kafkastreams.KafkaStreamsPipelineOptions;
@@ -41,15 +40,12 @@ import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PBegin;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.TypeDescriptor;
-import org.apache.kafka.clients.admin.AdminClient;
-import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.common.utils.Bytes;
 import org.apache.kafka.streams.KeyValue;
 import org.apache.kafka.streams.StreamsBuilder;
-import org.apache.kafka.streams.StreamsConfig;
 import org.apache.kafka.streams.Topology;
 import org.apache.kafka.streams.kstream.Consumed;
 import org.apache.kafka.streams.kstream.KStream;
@@ -78,7 +74,7 @@ public class ReadTransformTranslator<
   public void translate(
       PipelineTranslator pipelineTranslator, PTransform<PBegin, PCollection<OutputT>> transform) {
     KafkaStreamsPipelineOptions pipelineOptions = pipelineTranslator.getPipelineOptions();
-    String topic = Admin.topic(pipelineTranslator.getCurrentTransform());
+    String topic = Admin.topic(pipelineOptions, pipelineTranslator.getCurrentTransform());
     UnboundedSource<OutputT, CheckpointMarkT> unboundedSource =
         getUnboundedSource(pipelineTranslator, transform);
     Coder<KV<UnboundedSource<OutputT, CheckpointMarkT>, CheckpointMarkT>> unboundedSourceCoder =
@@ -161,37 +157,21 @@ public class ReadTransformTranslator<
       String topic,
       UnboundedSource<OutputT, CheckpointMarkT> unboundedSource,
       Coder<KV<UnboundedSource<OutputT, CheckpointMarkT>, CheckpointMarkT>> unboundedSourceCoder) {
-    try (AdminClient adminClient = Admin.adminClient(pipelineOptions)) {
-      if (adminClient.listTopics().names().get().contains(topic)) {
-        return;
+    if (Admin.createTopicIfNeeded(pipelineOptions, topic)) {
+      try (Producer<Integer, KV<UnboundedSource<OutputT, CheckpointMarkT>, CheckpointMarkT>>
+          producer =
+              Admin.producer(
+                  pipelineOptions, Serdes.Integer(), CoderSerde.of(unboundedSourceCoder))) {
+        List<? extends UnboundedSource<OutputT, CheckpointMarkT>> unboundedSources =
+            unboundedSource.split(pipelineOptions.getNumPartitions(), pipelineOptions);
+        for (int i = 0; i < unboundedSources.size(); i++) {
+          producer
+              .send(new ProducerRecord<>(topic, i, i, KV.of(unboundedSources.get(i), null)))
+              .get();
+        }
+      } catch (Exception e) {
+        throw new RuntimeException(e);
       }
-      adminClient
-          .createTopics(
-              Collections.singleton(
-                  new NewTopic(
-                      topic,
-                      pipelineOptions.getNumPartitions(),
-                      new StreamsConfig(pipelineOptions.getProperties())
-                          .getInt(StreamsConfig.REPLICATION_FACTOR_CONFIG)
-                          .shortValue())))
-          .all()
-          .get();
-    } catch (ExecutionException | InterruptedException e) {
-      throw new RuntimeException(e);
-    }
-    try (Producer<Integer, KV<UnboundedSource<OutputT, CheckpointMarkT>, CheckpointMarkT>>
-        producer =
-            Admin.producer(
-                pipelineOptions, Serdes.Integer(), CoderSerde.of(unboundedSourceCoder))) {
-      List<? extends UnboundedSource<OutputT, CheckpointMarkT>> unboundedSources =
-          unboundedSource.split(pipelineOptions.getNumPartitions(), pipelineOptions);
-      for (int i = 0; i < unboundedSources.size(); i++) {
-        producer
-            .send(new ProducerRecord<>(topic, i, i, KV.of(unboundedSources.get(i), null)))
-            .get();
-      }
-    } catch (Exception e) {
-      throw new RuntimeException(e);
     }
   }
 
