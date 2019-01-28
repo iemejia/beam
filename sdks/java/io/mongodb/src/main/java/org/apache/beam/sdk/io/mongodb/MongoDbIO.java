@@ -74,9 +74,6 @@ import org.slf4j.LoggerFactory;
  *
  * }</pre>
  *
- * <p>The source also accepts an optional configuration: {@code withFilter()} allows you to define a
- * JSON filter to get subset of data.
- *
  * <h3>Writing to MongoDB</h3>
  *
  * <p>MongoDB sink supports writing of Document (as JSON String) in a MongoDB.
@@ -154,9 +151,6 @@ public class MongoDbIO {
     abstract String collection();
 
     @Nullable
-    abstract String filter();
-
-    @Nullable
     abstract List<String> projection();
 
     abstract int numSplits();
@@ -183,8 +177,6 @@ public class MongoDbIO {
       abstract Builder setDatabase(String database);
 
       abstract Builder setCollection(String collection);
-
-      abstract Builder setFilter(String filter);
 
       abstract Builder setProjection(List<String> fieldNames);
 
@@ -275,10 +267,16 @@ public class MongoDbIO {
       return builder().setCollection(collection).build();
     }
 
-    /** Sets a filter on the documents in a collection. */
+    /**
+     * Sets a filter on the documents in a collection.
+     *
+     * @deprecated Filtering manually is discouraged. And the current logic is broken so this will
+     *     be now an NO-OP.
+     */
+    @Deprecated
     public Read withFilter(String filter) {
       checkArgument(filter != null, "filter can not be null");
-      return builder().setFilter(filter).build();
+      return builder().build();
     }
 
     /** Sets a projection on the documents in a collection. */
@@ -438,8 +436,8 @@ public class MongoDbIO {
         }
 
         LOG.debug("Number of splits is {}", splitKeys.size());
-        for (String shardFilter : splitKeysToFilters(splitKeys, spec.filter())) {
-          sources.add(new BoundedMongoDbSource(spec.withFilter(shardFilter)));
+        for (String shardFilter : splitKeysToFilters(splitKeys)) {
+          sources.add(new BoundedMongoDbSource(spec));
         }
 
         return sources;
@@ -469,11 +467,10 @@ public class MongoDbIO {
      * </ul>
      *
      * @param splitKeys The list of split keys.
-     * @param additionalFilter A custom (user) additional filter to append to the range filters.
      * @return A list of filters containing the ranges.
      */
     @VisibleForTesting
-    static List<String> splitKeysToFilters(List<Document> splitKeys, String additionalFilter) {
+    static List<String> splitKeysToFilters(List<Document> splitKeys) {
       ArrayList<String> filters = new ArrayList<>();
       String lowestBound = null; // lower boundary (previous split in the iteration)
       for (int i = 0; i < splitKeys.size(); i++) {
@@ -483,7 +480,8 @@ public class MongoDbIO {
           // this is the first split in the list, the filter defines
           // the range from the beginning up to this split
           rangeFilter = String.format("{ $and: [ {\"_id\":{$lte:ObjectId(\"%s\")}}", splitKey);
-          filters.add(formatFilter(rangeFilter, additionalFilter));
+          filters.add(String.format("%s ]}", rangeFilter));
+          ;
         } else if (i == splitKeys.size() - 1) {
           // this is the last split in the list, the filters define
           // the range from the previous split to the current split and also
@@ -492,38 +490,24 @@ public class MongoDbIO {
               String.format(
                   "{ $and: [ {\"_id\":{$gt:ObjectId(\"%s\")," + "$lte:ObjectId(\"%s\")}}",
                   lowestBound, splitKey);
-          filters.add(formatFilter(rangeFilter, additionalFilter));
+          filters.add(String.format("%s ]}", rangeFilter));
+          ;
           rangeFilter = String.format("{ $and: [ {\"_id\":{$gt:ObjectId(\"%s\")}}", splitKey);
-          filters.add(formatFilter(rangeFilter, additionalFilter));
+          filters.add(String.format("%s ]}", rangeFilter));
+          ;
         } else {
           // we are between two splits
           rangeFilter =
               String.format(
                   "{ $and: [ {\"_id\":{$gt:ObjectId(\"%s\")," + "$lte:ObjectId(\"%s\")}}",
                   lowestBound, splitKey);
-          filters.add(formatFilter(rangeFilter, additionalFilter));
+          filters.add(String.format("%s ]}", rangeFilter));
+          ;
         }
 
         lowestBound = splitKey;
       }
       return filters;
-    }
-
-    /**
-     * Cleanly format range filter, optionally adding the users filter if specified.
-     *
-     * @param filter The range filter.
-     * @param additionalFilter The users filter. Null if unspecified.
-     * @return The cleanly formatted range filter.
-     */
-    private static String formatFilter(String filter, @Nullable String additionalFilter) {
-      if (additionalFilter != null && !additionalFilter.isEmpty()) {
-        // user provided a filter, we append the user filter to the range filter
-        return String.format("%s,%s ]}", filter, additionalFilter);
-      } else {
-        // user didn't provide a filter, just cleanly close the range filter
-        return String.format("%s ]}", filter);
-      }
     }
   }
 
@@ -555,13 +539,7 @@ public class MongoDbIO {
 
       MongoCollection<Document> mongoCollection = mongoDatabase.getCollection(spec.collection());
 
-      if (spec.filter() == null) {
-        if (spec.projection() == null) {
-          cursor = mongoCollection.find().iterator();
-        } else {
-          cursor = mongoCollection.find().projection(include(spec.projection())).iterator();
-        }
-      } else {
+      
         Document bson = Document.parse(spec.filter());
         if (spec.projection() == null) {
           cursor = mongoCollection.find(bson).iterator();
