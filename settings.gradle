@@ -129,6 +129,8 @@ include "beam-sdks-java-io-amazon-web-services"
 project(":beam-sdks-java-io-amazon-web-services").dir = file("sdks/java/io/amazon-web-services")
 include "beam-sdks-java-io-amqp"
 project(":beam-sdks-java-io-amqp").dir = file("sdks/java/io/amqp")
+include "beam-sdks-java-io-avro"
+project(":beam-sdks-java-io-avro").dir = file("sdks/java/io/avro")
 include "beam-sdks-java-io-cassandra"
 project(":beam-sdks-java-io-cassandra").dir = file("sdks/java/io/cassandra")
 include "beam-sdks-java-io-clickhouse"

@@ -15,7 +15,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.beam.sdk.io;
+package org.apache.beam.sdk.io.avro;
 
 import static org.apache.avro.file.DataFileConstants.BZIP2_CODEC;
 import static org.apache.avro.file.DataFileConstants.DEFLATE_CODEC;

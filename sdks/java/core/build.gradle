@@ -30,7 +30,6 @@ applyJavaNature(shadowClosure: DEFAULT_SHADOW_CLOSURE << {
   relocate "org.apache.commons", getJavaRelocatedPath("org.apache.commons")
   relocate "org.antlr.v4", getJavaRelocatedPath("org.antlr.v4")
 })
-applyAvroNature()
 applyAntlrNature()
 
 generateGrammarSource {
@@ -72,7 +71,6 @@ dependencies {
   shadow library.java.jackson_annotations
   shadow library.java.jackson_databind
   shadow library.java.slf4j_api
-  shadow library.java.avro
   shadow library.java.snappy_java
   shadow library.java.joda_time
   shadow "org.tukaani:xz:1.8"
@@ -87,5 +85,4 @@ dependencies {
   shadowTest library.java.hamcrest_library
   shadowTest "com.esotericsoftware.kryo:kryo:2.21"
   shadowTest library.java.quickcheck_core
-  shadowTest library.java.avro_tests
 }
