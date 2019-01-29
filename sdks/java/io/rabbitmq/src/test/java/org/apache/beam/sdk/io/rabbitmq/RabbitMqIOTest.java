@@ -110,24 +110,14 @@ public class RabbitMqIOTest implements Serializable {
 
     ConnectionFactory connectionFactory = new ConnectionFactory();
     connectionFactory.setUri("amqp://guest:guest@localhost:" + port);
-    Connection connection = null;
-    Channel channel = null;
-    try {
-      connection = connectionFactory.newConnection();
-      channel = connection.createChannel();
+    try (Connection connection = connectionFactory.newConnection();
+        Channel channel = connection.createChannel()) {
       channel.queueDeclare("READ", false, false, false, null);
       for (String record : records) {
         channel.basicPublish("", "READ", null, record.getBytes(StandardCharsets.UTF_8));
       }
 
       p.run();
-    } finally {
-      if (channel != null) {
-        channel.close();
-      }
-      if (connection != null) {
-        connection.close();
-      }
     }
   }
 
@@ -155,13 +145,9 @@ public class RabbitMqIOTest implements Serializable {
 
     ConnectionFactory connectionFactory = new ConnectionFactory();
     connectionFactory.setUri("amqp://guest:guest@localhost:" + port);
-    Connection connection = null;
-    Channel channel = null;
-    try {
-      connection = connectionFactory.newConnection();
-      channel = connection.createChannel();
+    try (Connection connection = connectionFactory.newConnection();
+        Channel channel = connection.createChannel()) {
       channel.exchangeDeclare("READEXCHANGE", "fanout");
-      Channel finalChannel = channel;
       Thread publisher =
           new Thread(
               () -> {
@@ -172,7 +158,7 @@ public class RabbitMqIOTest implements Serializable {
                 }
                 for (int i = 0; i < maxNumRecords; i++) {
                   try {
-                    finalChannel.basicPublish(
+                    channel.basicPublish(
                         "READEXCHANGE",
                         "test",
                         null,
@@ -185,13 +171,6 @@ public class RabbitMqIOTest implements Serializable {
       publisher.start();
       p.run();
       publisher.join();
-    } finally {
-      if (channel != null) {
-        channel.close();
-      }
-      if (connection != null) {
-        connection.close();
-      }
     }
   }
 
@@ -200,7 +179,7 @@ public class RabbitMqIOTest implements Serializable {
     final int maxNumRecords = 1000;
     List<RabbitMqMessage> data =
         generateRecords(maxNumRecords).stream()
-            .map(bytes -> new RabbitMqMessage(bytes))
+            .map(RabbitMqMessage::new)
             .collect(Collectors.toList());
     p.apply(Create.of(data))
         .apply(
@@ -209,11 +188,8 @@ public class RabbitMqIOTest implements Serializable {
     final List<String> received = new ArrayList<>();
     ConnectionFactory connectionFactory = new ConnectionFactory();
     connectionFactory.setUri("amqp://guest:guest@localhost:" + port);
-    Connection connection = null;
-    Channel channel = null;
-    try {
-      connection = connectionFactory.newConnection();
-      channel = connection.createChannel();
+    try (Connection connection = connectionFactory.newConnection();
+        Channel channel = connection.createChannel()) {
       channel.queueDeclare("TEST", true, false, false, null);
       Consumer consumer = new TestConsumer(channel, received);
       channel.basicConsume("TEST", true, consumer);
@@ -228,13 +204,6 @@ public class RabbitMqIOTest implements Serializable {
       for (int i = 0; i < maxNumRecords; i++) {
         assertTrue(received.contains("Test " + i));
       }
-    } finally {
-      if (channel != null) {
-        channel.close();
-      }
-      if (connection != null) {
-        connection.close();
-      }
     }
   }
 
@@ -243,7 +212,7 @@ public class RabbitMqIOTest implements Serializable {
     final int maxNumRecords = 1000;
     List<RabbitMqMessage> data =
         generateRecords(maxNumRecords).stream()
-            .map(bytes -> new RabbitMqMessage(bytes))
+            .map(RabbitMqMessage::new)
             .collect(Collectors.toList());
     p.apply(Create.of(data))
         .apply(
@@ -254,11 +223,8 @@ public class RabbitMqIOTest implements Serializable {
     final List<String> received = new ArrayList<>();
     ConnectionFactory connectionFactory = new ConnectionFactory();
     connectionFactory.setUri("amqp://guest:guest@localhost:" + port);
-    Connection connection = null;
-    Channel channel = null;
-    try {
-      connection = connectionFactory.newConnection();
-      channel = connection.createChannel();
+    try (Connection connection = connectionFactory.newConnection();
+        Channel channel = connection.createChannel()) {
       channel.exchangeDeclare("WRITE", "fanout");
       String queueName = channel.queueDeclare().getQueue();
       channel.queueBind(queueName, "WRITE", "");
@@ -275,13 +241,6 @@ public class RabbitMqIOTest implements Serializable {
       for (int i = 0; i < maxNumRecords; i++) {
         assertTrue(received.contains("Test " + i));
       }
-    } finally {
-      if (channel != null) {
-        channel.close();
-      }
-      if (connection != null) {
-        connection.close();
-      }
     }
   }
 
@@ -295,7 +254,7 @@ public class RabbitMqIOTest implements Serializable {
 
     private final List<String> received;
 
-    public TestConsumer(Channel channel, List<String> received) {
+    TestConsumer(Channel channel, List<String> received) {
       super(channel);
       this.received = received;
     }
