@@ -286,7 +286,8 @@ public class GroupByKeyTransformTranslator<K, V, W extends BoundedWindow>
     public void init(ProcessorContext processorContext) {
       this.processorContext = processorContext;
       // TODO: Get punctuateInterval from pipelineOptions.
-      this.processorContext.schedule(1000, PunctuationType.WALL_CLOCK_TIME, new GABWPunctuator());
+      this.processorContext.schedule(
+          1000, PunctuationType.WALL_CLOCK_TIME, new GABWPunctuator(1000));
       stateInternals = KStateInternals.of(statePrefix, processorContext);
       timerInternals =
           KTimerInternals.of(
@@ -343,6 +344,12 @@ public class GroupByKeyTransformTranslator<K, V, W extends BoundedWindow>
 
     private class GABWPunctuator implements Punctuator {
 
+      private final long interval;
+
+      private GABWPunctuator(long interval) {
+        this.interval = interval;
+      }
+
       @Override
       public void punctuate(long timestamp) {
         Instant previousInputWatermarkTime = timerInternals.currentInputWatermarkTime();
@@ -350,8 +357,7 @@ public class GroupByKeyTransformTranslator<K, V, W extends BoundedWindow>
             streamSourceWatermarks.values().stream().min(Comparator.naturalOrder()).get());
         timerInternals.advanceOutputWatermarkTime(previousInputWatermarkTime);
         timerInternals.advanceProcessingTime(new Instant(timestamp));
-        // TODO: Get punctuateInterval from pipelineOptions.
-        timerInternals.advanceSynchronizedProcessingTime(new Instant(timestamp - 1000));
+        timerInternals.advanceSynchronizedProcessingTime(new Instant(timestamp - interval));
         Map<K, List<TimerData>> timersWorkItems = new HashMap<>();
         for (KV<K, TimerData> keyedTimerData : timerInternals.getFireableTimers()) {
           K key = keyedTimerData.getKey();
