@@ -17,6 +17,9 @@
  */
 package org.apache.beam.runners.kafkastreams.serde;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.util.Map;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.kafka.common.serialization.Deserializer;
@@ -53,5 +56,66 @@ public class CoderSerde<T> implements Serde<T> {
   @Override
   public Deserializer<T> deserializer() {
     return CoderDeserializer.of(coder);
+  }
+
+  /** Kafka {@link Serializer} that uses a Beam Coder to encode. */
+  public static class CoderSerializer<T> implements Serializer<T> {
+
+    public static <T> CoderSerializer<T> of(Coder<T> coder) {
+      return new CoderSerializer<>(coder);
+    }
+
+    private final Coder<T> coder;
+
+    private CoderSerializer(Coder<T> coder) {
+      this.coder = coder;
+    }
+
+    @Override
+    public void close() {}
+
+    @Override
+    public void configure(Map<String, ?> configs, boolean isKey) {}
+
+    @Override
+    public byte[] serialize(String topic, T data) {
+      try {
+        ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+        coder.encode(data, outputStream);
+        return outputStream.toByteArray();
+      } catch (IOException e) {
+        throw new IllegalStateException("Error encoding value: " + data, e);
+      }
+    }
+  }
+
+  /** Kafka {@link Deserializer} that uses a Beam Coder to decode. */
+  public static class CoderDeserializer<T> implements Deserializer<T> {
+
+    public static <T> CoderDeserializer<T> of(Coder<T> coder) {
+      return new CoderDeserializer<>(coder);
+    }
+
+    private final Coder<T> coder;
+
+    private CoderDeserializer(Coder<T> coder) {
+      this.coder = coder;
+    }
+
+    @Override
+    public void close() {}
+
+    @Override
+    public void configure(Map<String, ?> configs, boolean isKey) {}
+
+    @Override
+    public T deserialize(String topic, byte[] data) {
+      try {
+        ByteArrayInputStream inputStream = new ByteArrayInputStream(data);
+        return coder.decode(inputStream);
+      } catch (IOException e) {
+        throw new IllegalStateException("Error decoding bytes for coder: " + coder, e);
+      }
+    }
   }
 }

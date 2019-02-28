@@ -67,7 +67,8 @@ public class PipelineTranslator extends Pipeline.PipelineVisitor.Defaults {
         PTransformTranslation.PAR_DO_TRANSFORM_URN, new ParDoTransformTranslator<>());
     TRANSFORM_TRANSLATORS.put(
         PTransformTranslation.READ_TRANSFORM_URN, new ReadTransformTranslator<>());
-    TRANSFORM_TRANSLATORS.put(PTransformTranslation.RESHUFFLE_URN, new NoOpTransformTranslator());
+    TRANSFORM_TRANSLATORS.put(
+        PTransformTranslation.RESHUFFLE_URN, new ReshuffleTransformTranslator<>());
   }
 
   private final Pipeline pipeline;

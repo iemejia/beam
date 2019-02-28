@@ -18,12 +18,16 @@
 package org.apache.beam.runners.kafkastreams.translation;
 
 import java.io.IOException;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
+
+import javax.annotation.Nullable;
+
 import org.apache.beam.runners.core.DoFnRunner;
 import org.apache.beam.runners.core.DoFnRunners;
 import org.apache.beam.runners.core.InMemoryTimerInternals;
@@ -60,6 +64,7 @@ import org.apache.beam.sdk.transforms.reflect.DoFnSignatures;
 import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
 import org.apache.beam.sdk.transforms.windowing.GlobalWindow;
 import org.apache.beam.sdk.util.WindowedValue;
+import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.PCollectionView;
 import org.apache.beam.sdk.values.PValue;
@@ -99,8 +104,6 @@ public class ParDoTransformTranslator<InputT, OutputT, W extends BoundedWindow>
       KafkaStreamsPipelineOptions pipelineOptions = pipelineTranslator.getPipelineOptions();
       PCollection<InputT> input = (PCollection<InputT>) pipelineTranslator.getInput(transform);
       Coder<InputT> inputCoder = input.getCoder();
-      WindowingStrategy<?, W> windowingStrategy =
-          (WindowingStrategy<?, W>) input.getWindowingStrategy();
       Map<TupleTag<?>, PValue> outputs = pipelineTranslator.getOutputs(transform);
       Map<TupleTag<?>, Coder<?>> outputCoders = pipelineTranslator.getOutputCoders();
       AppliedPTransform<?, ?, ?> appliedPTransform = pipelineTranslator.getCurrentTransform();
@@ -114,29 +117,36 @@ public class ParDoTransformTranslator<InputT, OutputT, W extends BoundedWindow>
 
       KStream<Object, WindowedValue<InputT>> inputStream = pipelineTranslator.getStream(input);
 
-      String statePrefix =
-          Admin.uniqueName(pipelineOptions, pipelineTranslator.getCurrentTransform()) + "-";
       Map<PCollectionView<?>, String> sideInputs =
           sideInputs(
               pipelineTranslator,
               pipelineOptions,
               ParDoTranslation.getSideInputs(appliedPTransform));
-      // TODO: Add the storeNames from the KSideInputs to the list created in stateStores.
+      Collection<String> stateStoreNames = sideInputs.values();
+      String statePrefix;
+      if (ParDoTranslation.usesStateOrTimers(appliedPTransform)) {
+        // TODO: Is reshuffle required?
+        statePrefix =
+            Admin.uniqueName(pipelineOptions, pipelineTranslator.getCurrentTransform()) + "-";
+        stateStoreNames.addAll(stateStoreNames(pipelineTranslator, statePrefix, ((KvCoder<?, ?>) inputCoder).getKeyCoder(), doFn));
+      } else {
+        statePrefix = null;
+      }
       KStream<TupleTag<?>, WindowedValue<?>> taggedOutputStream =
           inputStream.transform(
               () ->
-                  new ParDoTransformer(
+                  new ParDoTransformer<>(
                       pipelineOptions,
-                      statePrefix,
                       doFn,
                       sideInputs,
                       mainOutputTag,
                       additionalOutputTags.getAll(),
                       inputCoder,
                       outputCoders,
-                      windowingStrategy,
-                      streamSources),
-              stateStores(pipelineTranslator, statePrefix, input.getCoder(), doFn));
+                      (WindowingStrategy<?, W>) input.getWindowingStrategy(),
+                      streamSources,
+                      statePrefix),
+              stateStoreNames.stream().collect(Collectors.toSet()).toArray(new String[0]));
 
       List<TupleTag<?>> outputTags = additionalOutputTags.and(mainOutputTag).getAll();
       Predicate<TupleTag<?>, WindowedValue<?>>[] predicates =
@@ -180,10 +190,10 @@ public class ParDoTransformTranslator<InputT, OutputT, W extends BoundedWindow>
     return kSideInputs;
   }
 
-  private String[] stateStores(
+  private Set<String> stateStoreNames(
       PipelineTranslator pipelineTranslator,
       String statePrefix,
-      Coder<InputT> inputCoder,
+      Coder<?> keyCoder,
       DoFn<InputT, OutputT> doFn) {
     try {
       Map<String, StateDeclaration> stateDeclarations =
@@ -200,7 +210,7 @@ public class ParDoTransformTranslator<InputT, OutputT, W extends BoundedWindow>
                       public StoreBuilder<?> dispatchValue(Coder<?> valueCoder) {
                         return Stores.keyValueStoreBuilder(
                                 Stores.persistentKeyValueStore(stateDeclaration.id()),
-                                CoderSerde.of(KvCoder.of(inputCoder, StringUtf8Coder.of())),
+                                CoderSerde.of(KvCoder.of(keyCoder, StringUtf8Coder.of())),
                                 CoderSerde.of(valueCoder))
                             .withCachingEnabled();
                       }
@@ -209,7 +219,7 @@ public class ParDoTransformTranslator<InputT, OutputT, W extends BoundedWindow>
                       public StoreBuilder<?> dispatchBag(Coder<?> elementCoder) {
                         return Stores.keyValueStoreBuilder(
                                 Stores.persistentKeyValueStore(stateDeclaration.id()),
-                                CoderSerde.of(KvCoder.of(inputCoder, StringUtf8Coder.of())),
+                                CoderSerde.of(KvCoder.of(keyCoder, StringUtf8Coder.of())),
                                 CoderSerde.of(ListCoder.of(elementCoder)))
                             .withCachingEnabled();
                       }
@@ -218,17 +228,17 @@ public class ParDoTransformTranslator<InputT, OutputT, W extends BoundedWindow>
                       public StoreBuilder<?> dispatchSet(Coder<?> elementCoder) {
                         return Stores.keyValueStoreBuilder(
                                 Stores.persistentKeyValueStore(stateDeclaration.id()),
-                                CoderSerde.of(KvCoder.of(inputCoder, StringUtf8Coder.of())),
+                                CoderSerde.of(KvCoder.of(keyCoder, StringUtf8Coder.of())),
                                 CoderSerde.of(SetCoder.of(elementCoder)))
                             .withCachingEnabled();
                       }
 
                       @Override
-                      public StoreBuilder<?> dispatchMap(Coder<?> keyCoder, Coder<?> valueCoder) {
+                      public StoreBuilder<?> dispatchMap(Coder<?> kCoder, Coder<?> vCoder) {
                         return Stores.keyValueStoreBuilder(
                                 Stores.persistentKeyValueStore(stateDeclaration.id()),
-                                CoderSerde.of(KvCoder.of(inputCoder, StringUtf8Coder.of())),
-                                CoderSerde.of(MapCoder.of(keyCoder, valueCoder)))
+                                CoderSerde.of(KvCoder.of(keyCoder, StringUtf8Coder.of())),
+                                CoderSerde.of(MapCoder.of(kCoder, vCoder)))
                             .withCachingEnabled();
                       }
 
@@ -237,24 +247,23 @@ public class ParDoTransformTranslator<InputT, OutputT, W extends BoundedWindow>
                           CombineFn<?, ?, ?> combineFn, Coder<?> accumCoder) {
                         return Stores.keyValueStoreBuilder(
                                 Stores.persistentKeyValueStore(stateDeclaration.id()),
-                                CoderSerde.of(KvCoder.of(inputCoder, StringUtf8Coder.of())),
+                                CoderSerde.of(KvCoder.of(keyCoder, StringUtf8Coder.of())),
                                 CoderSerde.of(accumCoder))
                             .withCachingEnabled();
                       }
                     }));
       }
-      return stateDeclarations.keySet().toArray(new String[0]);
+      return stateDeclarations.keySet();
     } catch (IllegalAccessException e) {
       throw new RuntimeException(e);
     }
   }
 
-  private class ParDoTransformer
+  private class ParDoTransformer<K>
       implements Transformer<
           Object, WindowedValue<InputT>, KeyValue<TupleTag<?>, WindowedValue<?>>> {
 
     private final PipelineOptions pipelineOptions;
-    private final String statePrefix;
     private final DoFn<InputT, OutputT> doFn;
     private final Map<PCollectionView<?>, String> sideInputs;
     private final TupleTag<OutputT> mainOutputTag;
@@ -263,17 +272,17 @@ public class ParDoTransformTranslator<InputT, OutputT, W extends BoundedWindow>
     private final Map<TupleTag<?>, Coder<?>> outputCoders;
     private final WindowingStrategy<?, W> windowingStrategy;
     private final Map<String, Instant> streamSourceWatermarks;
+    @Nullable private final String statePrefix;
 
     private ProcessorContext processorContext;
-    private KStateInternals<InputT> stateInternals;
+    private KStateInternals<K> stateInternals;
     private InMemoryTimerInternals timerInternals;
     private DoFnInvoker<InputT, OutputT> doFnInvoker;
     private DoFnRunner<InputT, OutputT> doFnRunner;
-    private InputT input;
+    private K key;
 
     private ParDoTransformer(
         PipelineOptions pipelineOptions,
-        String statePrefix,
         DoFn<InputT, OutputT> doFn,
         Map<PCollectionView<?>, String> sideInputs,
         TupleTag<OutputT> mainOutputTag,
@@ -281,9 +290,9 @@ public class ParDoTransformTranslator<InputT, OutputT, W extends BoundedWindow>
         Coder<InputT> inputCoder,
         Map<TupleTag<?>, Coder<?>> outputCoders,
         WindowingStrategy<?, W> windowingStrategy,
-        Set<String> streamSources) {
+        Set<String> streamSources,
+        @Nullable String statePrefix) {
       this.pipelineOptions = pipelineOptions;
-      this.statePrefix = statePrefix;
       this.doFn = doFn;
       this.sideInputs = sideInputs;
       this.mainOutputTag = mainOutputTag;
@@ -296,6 +305,7 @@ public class ParDoTransformTranslator<InputT, OutputT, W extends BoundedWindow>
               .stream()
               .collect(
                   Collectors.toMap(string -> string, string -> BoundedWindow.TIMESTAMP_MIN_VALUE));
+      this.statePrefix = statePrefix;
     }
 
     @Override
@@ -325,12 +335,14 @@ public class ParDoTransformTranslator<InputT, OutputT, W extends BoundedWindow>
 
     @Override
     public KeyValue<TupleTag<?>, WindowedValue<?>> transform(
-        Object key, WindowedValue<InputT> value) {
+        Object object, WindowedValue<InputT> windowedValue) {
       streamSourceWatermarks.put(
           processorContext.topic(), new Instant(processorContext.timestamp()));
-      input = value.getValue();
-      doFnRunner.processElement(value);
-      input = null;
+      if (statePrefix != null) {
+        key = ((KV<K, ?>) windowedValue.getValue()).getKey();
+      }
+      doFnRunner.processElement(windowedValue);
+      key = null;
       return null;
     }
 
@@ -415,7 +427,7 @@ public class ParDoTransformTranslator<InputT, OutputT, W extends BoundedWindow>
 
       @Override
       public StateInternals stateInternals() {
-        return stateInternals.withKey(input);
+        return stateInternals.withKey(key);
       }
 
       @Override
