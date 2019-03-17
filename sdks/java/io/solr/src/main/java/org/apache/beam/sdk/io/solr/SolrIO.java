@@ -27,6 +27,7 @@ import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Optional;
 import java.util.function.Predicate;
 import javax.annotation.Nullable;
 import org.apache.beam.sdk.annotations.Experimental;
@@ -46,11 +47,9 @@ import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.PDone;
 import org.apache.beam.vendor.guava.v20_0.com.google.common.annotations.VisibleForTesting;
 import org.apache.beam.vendor.guava.v20_0.com.google.common.collect.ImmutableSet;
-import org.apache.http.client.HttpClient;
 import org.apache.solr.client.solrj.SolrQuery;
 import org.apache.solr.client.solrj.SolrServerException;
 import org.apache.solr.client.solrj.impl.CloudSolrClient;
-import org.apache.solr.client.solrj.impl.HttpClientUtil;
 import org.apache.solr.client.solrj.impl.HttpSolrClient;
 import org.apache.solr.client.solrj.request.UpdateRequest;
 import org.apache.solr.client.solrj.request.schema.SchemaRequest;
@@ -65,7 +64,6 @@ import org.apache.solr.common.cloud.Replica;
 import org.apache.solr.common.cloud.Slice;
 import org.apache.solr.common.cloud.ZkStateReader;
 import org.apache.solr.common.params.CursorMarkParams;
-import org.apache.solr.common.params.ModifiableSolrParams;
 import org.joda.time.Duration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -182,22 +180,15 @@ public class SolrIO {
       builder.addIfNotNull(DisplayData.item("username", getUsername()));
     }
 
-    private HttpClient createHttpClient() {
-      // This is bug in Solr, if we don't create a customize HttpClient,
-      // UpdateRequest with commit flag will throw an authentication error.
-      ModifiableSolrParams params = new ModifiableSolrParams();
-      params.set(HttpClientUtil.PROP_BASIC_AUTH_USER, getUsername());
-      params.set(HttpClientUtil.PROP_BASIC_AUTH_PASS, getPassword());
-      return HttpClientUtil.createClient(params);
-    }
-
     AuthorizedSolrClient<CloudSolrClient> createClient() {
-      CloudSolrClient solrClient = new CloudSolrClient(getZkHost(), createHttpClient());
+      CloudSolrClient solrClient =
+          new CloudSolrClient.Builder(Collections.singletonList(getZkHost()), Optional.empty())
+              .build();
       return new AuthorizedSolrClient<>(solrClient, this);
     }
 
     AuthorizedSolrClient<HttpSolrClient> createClient(String shardUrl) {
-      HttpSolrClient solrClient = new HttpSolrClient(shardUrl, createHttpClient());
+      HttpSolrClient solrClient = new HttpSolrClient.Builder(shardUrl).build();
       return new AuthorizedSolrClient<>(solrClient, this);
     }
   }
