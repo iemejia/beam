@@ -71,8 +71,8 @@ public class AvroUtils {
   static {
     // This works around a bug in the Avro library (AVRO-1891) around SpecificRecord's handling
     // of DateTime types.
-    SpecificData.get().addLogicalTypeConversion(new TimeConversions.TimestampConversion());
-    GenericData.get().addLogicalTypeConversion(new TimeConversions.TimestampConversion());
+    SpecificData.get().addLogicalTypeConversion(new TimeConversions.TimeMillisConversion());
+    GenericData.get().addLogicalTypeConversion(new TimeConversions.TimeMillisConversion());
   }
 
   // Unwrap an AVRO schema into the base type an whether it is nullable.
