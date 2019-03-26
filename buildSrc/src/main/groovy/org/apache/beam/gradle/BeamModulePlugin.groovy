@@ -343,7 +343,7 @@ class BeamModulePlugin implements Plugin<Project> {
     def apex_core_version = "3.7.0"
     def apex_malhar_version = "3.4.0"
     def aws_java_sdk_version = "1.11.519"
-    def cassandra_driver_version = "3.6.0"
+    def cassandra_driver_version = "4.0.0"
     def generated_grpc_beta_version = "0.44.0"
     def generated_grpc_ga_version = "1.43.0"
     def google_auth_version = "0.12.0"
@@ -397,8 +397,8 @@ class BeamModulePlugin implements Plugin<Project> {
         bigtable_client_core                        : "com.google.cloud.bigtable:bigtable-client-core:1.8.0",
         bigtable_protos                             : "com.google.api.grpc:grpc-google-cloud-bigtable-v2:$generated_grpc_beta_version",
         byte_buddy                                  : "net.bytebuddy:byte-buddy:1.9.3",
-        cassandra_driver_core                       : "com.datastax.cassandra:cassandra-driver-core:$cassandra_driver_version",
-        cassandra_driver_mapping                    : "com.datastax.cassandra:cassandra-driver-mapping:$cassandra_driver_version",
+        cassandra_driver_core                       : "com.datastax.oss:java-driver-core:$cassandra_driver_version",
+        cassandra_driver_query_builder              : "com.datastax.oss:java-driver-query-builder:$cassandra_driver_version",
         commons_codec                               : "commons-codec:commons-codec:1.10",
         commons_compress                            : "org.apache.commons:commons-compress:1.18",
         commons_csv                                 : "org.apache.commons:commons-csv:1.4",
