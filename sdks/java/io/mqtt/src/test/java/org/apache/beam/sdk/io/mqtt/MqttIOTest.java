@@ -20,13 +20,10 @@ package org.apache.beam.sdk.io.mqtt;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
 import java.net.ServerSocket;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentSkipListSet;
@@ -37,6 +34,7 @@ import org.apache.beam.sdk.testing.PAssert;
 import org.apache.beam.sdk.testing.TestPipeline;
 import org.apache.beam.sdk.transforms.Create;
 import org.apache.beam.sdk.values.PCollection;
+import org.apache.commons.lang3.SerializationUtils;
 import org.fusesource.hawtbuf.Buffer;
 import org.fusesource.mqtt.client.BlockingConnection;
 import org.fusesource.mqtt.client.MQTT;
@@ -44,9 +42,8 @@ import org.fusesource.mqtt.client.Message;
 import org.fusesource.mqtt.client.QoS;
 import org.fusesource.mqtt.client.Topic;
 import org.joda.time.Duration;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Ignore;
+import org.junit.AfterClass;
+import org.junit.BeforeClass;
 import org.junit.Rule;
 import org.junit.Test;
 import org.slf4j.Logger;
@@ -57,14 +54,13 @@ public class MqttIOTest {
 
   private static final Logger LOG = LoggerFactory.getLogger(MqttIOTest.class);
 
-  private BrokerService brokerService;
-
-  private int port;
+  private static BrokerService brokerService;
+  private static int port;
 
   @Rule public final transient TestPipeline pipeline = TestPipeline.create();
 
-  @Before
-  public void startBroker() throws Exception {
+  @BeforeClass
+  public static void startBroker() throws Exception {
     LOG.info("Finding free network port");
     try (ServerSocket socket = new ServerSocket(0)) {
       port = socket.getLocalPort();
@@ -80,28 +76,25 @@ public class MqttIOTest {
     brokerService.waitUntilStarted();
   }
 
-  @Test(timeout = 60 * 1000)
-  @Ignore("https://issues.apache.org/jira/browse/BEAM-3604 Test timeout failure.")
+  private static List<byte[]> buildMessages(int n) {
+    List<byte[]> messages = new ArrayList<>();
+    for (int i = 0; i < n; i++) {
+      messages.add(("This is test " + i).getBytes(StandardCharsets.UTF_8));
+    }
+    return messages;
+  }
+
+  @Test
   public void testReadNoClientId() throws Exception {
     final String topicName = "READ_TOPIC_NO_CLIENT_ID";
+    int numElements = 19;
     Read mqttReader =
         MqttIO.read()
             .withConnectionConfiguration(
                 MqttIO.ConnectionConfiguration.create("tcp://localhost:" + port, topicName))
             .withMaxNumRecords(10);
     PCollection<byte[]> output = pipeline.apply(mqttReader);
-    PAssert.that(output)
-        .containsInAnyOrder(
-            "This is test 0".getBytes(StandardCharsets.UTF_8),
-            "This is test 1".getBytes(StandardCharsets.UTF_8),
-            "This is test 2".getBytes(StandardCharsets.UTF_8),
-            "This is test 3".getBytes(StandardCharsets.UTF_8),
-            "This is test 4".getBytes(StandardCharsets.UTF_8),
-            "This is test 5".getBytes(StandardCharsets.UTF_8),
-            "This is test 6".getBytes(StandardCharsets.UTF_8),
-            "This is test 7".getBytes(StandardCharsets.UTF_8),
-            "This is test 8".getBytes(StandardCharsets.UTF_8),
-            "This is test 9".getBytes(StandardCharsets.UTF_8));
+    PAssert.that(output).containsInAnyOrder(buildMessages(numElements));
 
     // produce messages on the brokerService in another thread
     // This thread prevents to block the pipeline waiting for new messages
@@ -125,13 +118,11 @@ public class MqttIOTest {
                     }
                   }
                 }
-                for (int i = 0; i < 10; i++) {
-                  publishConnection.publish(
-                      topicName,
-                      ("This is test " + i).getBytes(StandardCharsets.UTF_8),
-                      QoS.EXACTLY_ONCE,
-                      false);
+                final List<byte[]> messages = MqttIOTest.buildMessages(numElements);
+                for (byte[] message : messages) {
+                  publishConnection.publish(topicName, message, QoS.EXACTLY_ONCE, false);
                 }
+
               } catch (Exception e) {
                 // nothing to do
               }
@@ -143,8 +134,7 @@ public class MqttIOTest {
     publisherThread.join();
   }
 
-  @Test(timeout = 30 * 1000)
-  @Ignore("https://issues.apache.org/jira/browse/BEAM-5150 Flake Non-deterministic output.")
+  @Test
   public void testRead() throws Exception {
     PCollection<byte[]> output =
         pipeline.apply(
@@ -207,8 +197,8 @@ public class MqttIOTest {
   }
 
   /** Test for BEAM-3282: this test should not timeout. */
-  @Test(timeout = 30 * 1000)
-  public void testReceiveWithTimeoutAndNoData() throws Exception {
+  @Test
+  public void testReceiveWithTimeoutAndNoData() {
     pipeline.apply(
         MqttIO.read()
             .withConnectionConfiguration(
@@ -269,26 +259,15 @@ public class MqttIOTest {
   }
 
   @Test
-  public void testReadObject() throws Exception {
-    ByteArrayOutputStream bos = new ByteArrayOutputStream();
-    ObjectOutputStream out = new ObjectOutputStream(bos);
+  public void testMqttCheckpointMarkSerialization() throws Exception {
     MqttIO.MqttCheckpointMark cp1 = new MqttIO.MqttCheckpointMark(UUID.randomUUID().toString());
-    out.writeObject(cp1);
-
-    ByteArrayInputStream bis = new ByteArrayInputStream(bos.toByteArray());
-    ObjectInputStream in = new ObjectInputStream(bis);
-    MqttIO.MqttCheckpointMark cp2 = (MqttIO.MqttCheckpointMark) in.readObject();
-
-    // there should be no bytes left in the stream
-    assertEquals(0, in.available());
-    // the number of messages of the decoded checkpoint should be zero
-    assertEquals(0, cp2.messages.size());
-    assertEquals(cp1.clientId, cp2.clientId);
-    assertEquals(cp1.oldestMessageTimestamp, cp2.oldestMessageTimestamp);
+    MqttIO.MqttCheckpointMark cp2 =
+        SerializationUtils.deserialize(SerializationUtils.serialize(cp1));
+    assertEquals(cp1, cp2);
   }
 
-  @After
-  public void stopBroker() throws Exception {
+  @AfterClass
+  public static void stopBroker() throws Exception {
     if (brokerService != null) {
       brokerService.stop();
       brokerService.waitUntilStopped();
