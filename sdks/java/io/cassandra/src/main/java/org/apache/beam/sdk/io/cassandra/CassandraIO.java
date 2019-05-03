@@ -47,6 +47,7 @@ import javax.annotation.Nullable;
 import org.apache.beam.sdk.annotations.Experimental;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.io.BoundedSource;
+import org.apache.beam.sdk.io.range.BigIntegerRange;
 import org.apache.beam.sdk.options.PipelineOptions;
 import org.apache.beam.sdk.options.ValueProvider;
 import org.apache.beam.sdk.transforms.DoFn;
@@ -441,7 +442,7 @@ public class CassandraIO {
           cluster.getMetadata().getTokenRanges().stream()
               .map(tokenRange -> new BigInteger(tokenRange.getEnd().getValue().toString()))
               .collect(Collectors.toList());
-      List<List<RingRange>> splits = splitGenerator.generateSplits(numSplits, tokens);
+      List<List<BigIntegerRange>> splits = splitGenerator.generateSplits(numSplits, tokens);
       LOG.info("{} splits were actually generated", splits.size());
 
       final String partitionKey =
@@ -451,21 +452,21 @@ public class CassandraIO {
               .collect(Collectors.joining(","));
 
       List<BoundedSource<T>> sources = new ArrayList<>();
-      for (List<RingRange> split : splits) {
+      for (List<BigIntegerRange> split : splits) {
         List<String> queries = new ArrayList<>();
-        for (RingRange range : split) {
-          if (range.isWrapping()) {
+        for (BigIntegerRange range : split) {
+          if (range.getFrom().compareTo(range.getTo()) >= 0) {
             // A wrapping range is one that overlaps from the end of the partitioner range and its
             // start (ie : when the start token of the split is greater than the end token)
             // We need to generate two queries here : one that goes from the start token to the end
             // of
             // the partitioner range, and the other from the start of the partitioner range to the
             // end token of the split.
-            queries.add(generateRangeQuery(spec, partitionKey, range.getStart(), null));
+            queries.add(generateRangeQuery(spec, partitionKey, range.getFrom(), null));
             // Generation of the second query of the wrapping range
-            queries.add(generateRangeQuery(spec, partitionKey, null, range.getEnd()));
+            queries.add(generateRangeQuery(spec, partitionKey, null, range.getTo()));
           } else {
-            queries.add(generateRangeQuery(spec, partitionKey, range.getStart(), range.getEnd()));
+            queries.add(generateRangeQuery(spec, partitionKey, range.getFrom(), range.getTo()));
           }
         }
         sources.add(new CassandraIO.CassandraSource<>(spec, queries));

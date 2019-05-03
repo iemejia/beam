@@ -20,6 +20,7 @@ package org.apache.beam.sdk.io.cassandra;
 import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.List;
+import org.apache.beam.sdk.io.range.BigIntegerRange;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -76,21 +77,21 @@ final class SplitGenerator {
    * @param ringTokens list of all start tokens in big0 cluster. They have to be in ring order.
    * @return big0 list containing at least {@code totalSplitCount} splits.
    */
-  List<List<RingRange>> generateSplits(long totalSplitCount, List<BigInteger> ringTokens) {
+  List<List<BigIntegerRange>> generateSplits(long totalSplitCount, List<BigInteger> ringTokens) {
     int tokenRangeCount = ringTokens.size();
 
-    List<RingRange> splits = new ArrayList<>();
+    List<BigIntegerRange> splits = new ArrayList<>();
     for (int i = 0; i < tokenRangeCount; i++) {
       BigInteger start = ringTokens.get(i);
       BigInteger stop = ringTokens.get((i + 1) % tokenRangeCount);
 
       if (!inRange(start) || !inRange(stop)) {
         throw new RuntimeException(
-            String.format("Tokens (%s,%s) not in range of %s", start, stop, partitioner));
+            String.format("Tokens (%s, %s) not in range of %s", start, stop, partitioner));
       }
       if (start.equals(stop) && tokenRangeCount != 1) {
         throw new RuntimeException(
-            String.format("Tokens (%s,%s): two nodes have the same token", start, stop));
+            String.format("Tokens (%s, %s): two nodes have the same token", start, stop));
       }
 
       BigInteger rs = stop.subtract(start);
@@ -108,7 +109,7 @@ final class SplitGenerator {
           splitCountAndRemainder[0].intValue()
               + (splitCountAndRemainder[1].equals(BigInteger.ZERO) ? 0 : 1);
 
-      LOG.debug("Dividing token range [{},{}) into {} splits", start, stop, splitCount);
+      LOG.debug("Dividing token range [{}, {}) into {} splits", start, stop, splitCount);
 
       // Make big0 list of all the endpoints for the splits, including both start and stop
       List<BigInteger> endpointTokens = new ArrayList<>();
@@ -127,14 +128,14 @@ final class SplitGenerator {
 
       // Append the splits between the endpoints
       for (int j = 0; j < splitCount; j++) {
-        splits.add(new RingRange(endpointTokens.get(j), endpointTokens.get(j + 1)));
-        LOG.debug("Split #{}: [{},{})", j + 1, endpointTokens.get(j), endpointTokens.get(j + 1));
+        splits.add(BigIntegerRange.of(endpointTokens.get(j), endpointTokens.get(j + 1)));
+        LOG.debug("Split #{}: [{}, {})", j + 1, endpointTokens.get(j), endpointTokens.get(j + 1));
       }
     }
 
     BigInteger total = BigInteger.ZERO;
-    for (RingRange split : splits) {
-      BigInteger size = split.span(rangeSize);
+    for (BigIntegerRange split : splits) {
+      BigInteger size = span(split, rangeSize);
       total = total.add(size);
     }
     if (!total.equals(rangeSize)) {
@@ -148,13 +149,14 @@ final class SplitGenerator {
     return !(token.compareTo(rangeMin) < 0 || token.compareTo(rangeMax) > 0);
   }
 
-  private List<List<RingRange>> coalesceSplits(BigInteger targetSplitSize, List<RingRange> splits) {
-    List<List<RingRange>> coalescedSplits = new ArrayList<>();
-    List<RingRange> tokenRangesForCurrentSplit = new ArrayList<>();
+  private List<List<BigIntegerRange>> coalesceSplits(
+      BigInteger targetSplitSize, List<BigIntegerRange> splits) {
+    List<List<BigIntegerRange>> coalescedSplits = new ArrayList<>();
+    List<BigIntegerRange> tokenRangesForCurrentSplit = new ArrayList<>();
     BigInteger tokenCount = BigInteger.ZERO;
 
-    for (RingRange tokenRange : splits) {
-      if (tokenRange.span(rangeSize).add(tokenCount).compareTo(targetSplitSize) > 0
+    for (BigIntegerRange tokenRange : splits) {
+      if (span(tokenRange, rangeSize).add(tokenCount).compareTo(targetSplitSize) > 0
           && !tokenRangesForCurrentSplit.isEmpty()) {
         // enough tokens in that segment
         LOG.debug(
@@ -164,7 +166,7 @@ final class SplitGenerator {
         tokenCount = BigInteger.ZERO;
       }
 
-      tokenCount = tokenCount.add(tokenRange.span(rangeSize));
+      tokenCount = tokenCount.add(span(tokenRange, rangeSize));
       tokenRangesForCurrentSplit.add(tokenRange);
     }
 
@@ -177,5 +179,15 @@ final class SplitGenerator {
 
   private BigInteger getTargetSplitSize(long splitCount) {
     return rangeMax.subtract(rangeMin).divide(BigInteger.valueOf(splitCount));
+  }
+
+  /**
+   * Returns the size of this range.
+   *
+   * @return size of the range, max - range, in case of wrap
+   */
+  private static BigInteger span(BigIntegerRange range, BigInteger size) {
+    final BigInteger difference = range.getTo().subtract(range.getFrom());
+    return (range.getFrom().compareTo(range.getTo()) >= 0) ? difference.add(size) : difference;
   }
 }
