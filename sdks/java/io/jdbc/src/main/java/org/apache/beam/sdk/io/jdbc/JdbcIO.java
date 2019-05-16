@@ -377,7 +377,13 @@ public class JdbcIO {
     }
   }
 
-  /** Wraps a {@link DataSourceConfiguration} to provide a {@link PoolingDataSource}. */
+  /**
+   * Wraps a {@link DataSourceConfiguration} to provide a {@link PoolingDataSource}.
+   *
+   * @deprecated Prefer configuring your own PoolableDataSource vis {@link
+   *     JdbcIO.Read#withDataSourceProviderFn(SerializableFunction)}.
+   */
+  @Deprecated
   public static class PoolableDataSourceProvider extends BaseDataSourceProvider {
     private static SerializableFunction<Void, DataSource> instance = null;
 

@@ -90,12 +90,14 @@ dependencies {
   shadowTest library.java.mockito_core
   shadowTest library.java.jackson_dataformat_yaml
   shadowTest "org.apache.kafka:kafka_2.11:0.11.0.1"
+  testRuntimeOnly library.java.slf4j_log4j12
   validatesRunner project(path: ":sdks:java:core", configuration: "shadowTest")
   validatesRunner project(path: ":sdks:java:io:hadoop-format", configuration: "shadowTest")
   validatesRunner project(path: ":examples:java", configuration: "shadowTest")
   validatesRunner project(path: project.path, configuration: "shadowTest")
   validatesRunner project(path: project.path, configuration: "shadow")
   validatesRunner project(path: project.path, configuration: "provided")
+  validatesRunner library.java.slf4j_log4j12
 }
 
 configurations.testRuntimeClasspath {

@@ -238,7 +238,10 @@ public class JdbcIOTest implements Serializable {
         pipeline.apply(
             JdbcIO.<TestRow>read()
                 .withFetchSize(12)
-                .withDataSourceConfiguration(JdbcIO.DataSourceConfiguration.create(dataSource))
+                // .withDataSourceConfiguration(JdbcIO.DataSourceConfiguration.create(dataSource))
+                .withDataSourceProviderFn(
+                    JdbcIO.PoolableDataSourceProvider.of(
+                        JdbcIO.DataSourceConfiguration.create(dataSource)))
                 .withQuery("select name,id from " + readTableName)
                 .withRowMapper(new JdbcTestHelper.CreateTestRowOfNameAndId())
                 .withCoder(SerializableCoder.of(TestRow.class)));
@@ -317,10 +320,12 @@ public class JdbcIOTest implements Serializable {
 
   private static JdbcIO.Write<KV<Integer, String>> getJdbcWrite(String tableName) {
     return JdbcIO.<KV<Integer, String>>write()
-        .withDataSourceConfiguration(
-            JdbcIO.DataSourceConfiguration.create(
-                "org.apache.derby.jdbc.ClientDriver",
-                "jdbc:derby://localhost:" + port + "/target/beam"))
+        //        .withDataSourceConfiguration(
+        //            JdbcIO.DataSourceConfiguration.create(
+        //                "org.apache.derby.jdbc.ClientDriver",
+        //                "jdbc:derby://localhost:" + port + "/target/beam"))
+        .withDataSourceProviderFn(
+            JdbcIO.PoolableDataSourceProvider.of(JdbcIO.DataSourceConfiguration.create(dataSource)))
         .withStatement(String.format("insert into %s values(?, ?)", tableName))
         .withBatchSize(10L)
         .withPreparedStatementSetter(
