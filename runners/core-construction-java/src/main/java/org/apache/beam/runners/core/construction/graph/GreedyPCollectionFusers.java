@@ -352,7 +352,7 @@ class GreedyPCollectionFusers {
       @SuppressWarnings("unused") Collection<PCollectionNode> stagePCollections,
       @SuppressWarnings("unused") QueryablePipeline pipeline) {
     LOG.debug(
-        "Unknown {} {} will not fuse into an existing {}",
+        "Unknown {} {} will not fuse into an existing {} {}",
         PTransform.class.getSimpleName(),
         transform.getTransform(),
         ExecutableStage.class.getSimpleName(),

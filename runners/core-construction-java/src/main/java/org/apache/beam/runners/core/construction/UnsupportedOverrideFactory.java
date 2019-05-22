@@ -39,7 +39,6 @@ public final class UnsupportedOverrideFactory<
 
   private final String message;
 
-  @SuppressWarnings("rawtypes")
   public static <
           InputT extends PInput,
           OutputT extends POutput,

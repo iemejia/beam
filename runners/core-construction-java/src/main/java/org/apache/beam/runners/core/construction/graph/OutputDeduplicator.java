@@ -215,7 +215,7 @@ class OutputDeduplicator {
 
   @AutoValue
   abstract static class PTransformDeduplication {
-    public static PTransformDeduplication of(
+    static PTransformDeduplication of(
         PTransformNode updatedTransform, Map<String, PCollectionNode> originalToPartial) {
       return new AutoValue_OutputDeduplicator_PTransformDeduplication(
           updatedTransform, originalToPartial);
@@ -238,7 +238,7 @@ class OutputDeduplicator {
 
   @AutoValue
   abstract static class StageDeduplication {
-    public static StageDeduplication of(
+    static StageDeduplication of(
         ExecutableStage updatedStage, Map<String, PCollectionNode> originalToPartial) {
       return new AutoValue_OutputDeduplicator_StageDeduplication(updatedStage, originalToPartial);
     }
@@ -330,11 +330,11 @@ class OutputDeduplicator {
 
   @AutoValue
   abstract static class StageOrTransform {
-    public static StageOrTransform stage(ExecutableStage stage) {
+    static StageOrTransform stage(ExecutableStage stage) {
       return new AutoValue_OutputDeduplicator_StageOrTransform(stage, null);
     }
 
-    public static StageOrTransform transform(PTransformNode transform) {
+    static StageOrTransform transform(PTransformNode transform) {
       return new AutoValue_OutputDeduplicator_StageOrTransform(null, transform);
     }
 

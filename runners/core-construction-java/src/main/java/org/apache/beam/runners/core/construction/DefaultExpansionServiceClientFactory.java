@@ -27,8 +27,8 @@ import org.apache.beam.vendor.grpc.v1p13p1.io.grpc.ManagedChannel;
 
 /** Default factory for ExpansionServiceClient used by External transform. */
 public class DefaultExpansionServiceClientFactory implements ExpansionServiceClientFactory {
-  private Map<Endpoints.ApiServiceDescriptor, ExpansionServiceClient> expansionServiceMap;
-  private Function<Endpoints.ApiServiceDescriptor, ManagedChannel> channelFactory;
+  private final Map<Endpoints.ApiServiceDescriptor, ExpansionServiceClient> expansionServiceMap;
+  private final Function<Endpoints.ApiServiceDescriptor, ManagedChannel> channelFactory;
 
   DefaultExpansionServiceClientFactory(
       Function<Endpoints.ApiServiceDescriptor, ManagedChannel> channelFactory) {
@@ -59,7 +59,7 @@ public class DefaultExpansionServiceClientFactory implements ExpansionServiceCli
               }
 
               @Override
-              public void close() throws Exception {
+              public void close() {
                 channel.shutdown();
               }
             });

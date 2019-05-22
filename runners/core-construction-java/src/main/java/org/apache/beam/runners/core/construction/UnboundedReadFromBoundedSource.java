@@ -23,7 +23,6 @@ import static org.apache.beam.vendor.guava.v20_0.com.google.common.base.Precondi
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
@@ -112,7 +111,7 @@ public class UnboundedReadFromBoundedSource<T> extends PTransform<PBegin, PColle
   public static class BoundedToUnboundedSourceAdapter<T>
       extends UnboundedSource<T, BoundedToUnboundedSourceAdapter.Checkpoint<T>> {
 
-    private BoundedSource<T> boundedSource;
+    private final BoundedSource<T> boundedSource;
 
     public BoundedToUnboundedSourceAdapter(BoundedSource<T> boundedSource) {
       this.boundedSource = boundedSource;
@@ -125,7 +124,7 @@ public class UnboundedReadFromBoundedSource<T> extends PTransform<PBegin, PColle
 
     @Override
     public List<BoundedToUnboundedSourceAdapter<T>> split(
-        int desiredNumSplits, PipelineOptions options) throws Exception {
+        int desiredNumSplits, PipelineOptions options) {
       try {
         long estimatedSize = boundedSource.getEstimatedSizeBytes(options);
         if (estimatedSize <= 0) {
@@ -155,8 +154,7 @@ public class UnboundedReadFromBoundedSource<T> extends PTransform<PBegin, PColle
     }
 
     @Override
-    public Reader createReader(PipelineOptions options, Checkpoint<T> checkpoint)
-        throws IOException {
+    public Reader createReader(PipelineOptions options, Checkpoint<T> checkpoint) {
       if (checkpoint == null) {
         return new Reader(null /* residualElements */, boundedSource, options);
       } else {
@@ -169,7 +167,6 @@ public class UnboundedReadFromBoundedSource<T> extends PTransform<PBegin, PColle
       return boundedSource.getDefaultOutputCoder();
     }
 
-    @SuppressWarnings({"rawtypes", "unchecked"})
     @Override
     public Coder<Checkpoint<T>> getCheckpointMarkCoder() {
       return new CheckpointCoder<>(boundedSource.getDefaultOutputCoder());
@@ -239,7 +236,7 @@ public class UnboundedReadFromBoundedSource<T> extends PTransform<PBegin, PColle
 
       @Override
       public List<Coder<?>> getCoderArguments() {
-        return Arrays.asList(elemCoder);
+        return Collections.singletonList(elemCoder);
       }
 
       @Override
@@ -392,7 +389,7 @@ public class UnboundedReadFromBoundedSource<T> extends PTransform<PBegin, PColle
         this.done = false;
       }
 
-      public boolean advance() {
+      boolean advance() {
         if (elementsIterator == null) {
           elementsIterator = elementsList.iterator();
         }
@@ -444,13 +441,13 @@ public class UnboundedReadFromBoundedSource<T> extends PTransform<PBegin, PColle
     }
 
     private class ResidualSource {
-      private BoundedSource<T> residualSource;
-      private PipelineOptions options;
+      private final BoundedSource<T> residualSource;
+      private final PipelineOptions options;
       private @Nullable BoundedReader<T> reader;
       private boolean closed;
       private boolean readerDone;
 
-      public ResidualSource(BoundedSource<T> residualSource, PipelineOptions options) {
+      ResidualSource(BoundedSource<T> residualSource, PipelineOptions options) {
         this.residualSource = checkNotNull(residualSource, "residualSource");
         this.options = checkNotNull(options, "options");
         this.reader = null;

@@ -42,7 +42,7 @@ public abstract class Timer<T> {
 
   /** Returns a timer for the given timestamp with a {@code null} payload. */
   public static Timer<Void> of(Instant time) {
-    return of(time, (Void) null);
+    return of(time, null);
   }
 
   /** Returns a timer for the given timestamp with a user specified payload. */

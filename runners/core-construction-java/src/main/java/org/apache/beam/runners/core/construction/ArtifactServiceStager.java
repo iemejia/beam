@@ -20,7 +20,6 @@ package org.apache.beam.runners.core.construction;
 import com.google.auto.value.AutoValue;
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.util.Collection;
@@ -99,7 +98,7 @@ public class ArtifactServiceStager {
    * @return The artifact staging token returned by the service
    */
   public String stage(String stagingSessionToken, Collection<StagedFile> files)
-      throws IOException, InterruptedException {
+      throws InterruptedException {
     final Map<StagedFile, CompletionStage<ArtifactMetadata>> futures = new HashMap<>();
     LOG.info("Staging {} files (token: {})", files.size(), stagingSessionToken);
     for (StagedFile file : files) {
@@ -214,11 +213,11 @@ public class ArtifactServiceStager {
         completed.countDown();
       }
 
-      public boolean isTerminal() {
+      boolean isTerminal() {
         return completed.getCount() == 0;
       }
 
-      public void awaitTermination() throws InterruptedException {
+      void awaitTermination() throws InterruptedException {
         completed.await();
       }
     }

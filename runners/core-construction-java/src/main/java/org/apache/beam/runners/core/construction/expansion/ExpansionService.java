@@ -18,7 +18,6 @@
 package org.apache.beam.runners.core.construction.expansion;
 
 import com.google.auto.service.AutoService;
-import java.io.IOException;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 import java.util.ArrayDeque;
@@ -294,7 +293,7 @@ public class ExpansionService extends ExpansionServiceGrpc.ExpansionServiceImplB
     }
   }
 
-  private Map<String, TransformProvider> registeredTransforms = loadRegisteredTransforms();
+  private final Map<String, TransformProvider> registeredTransforms = loadRegisteredTransforms();
 
   private Map<String, TransformProvider> loadRegisteredTransforms() {
     ImmutableMap.Builder<String, TransformProvider> registeredTransforms = ImmutableMap.builder();
@@ -322,13 +321,7 @@ public class ExpansionService extends ExpansionServiceGrpc.ExpansionServiceImplB
             .collect(
                 Collectors.toMap(
                     Map.Entry::getKey,
-                    input -> {
-                      try {
-                        return rehydratedComponents.getPCollection(input.getValue());
-                      } catch (IOException exn) {
-                        throw new RuntimeException(exn);
-                      }
-                    }));
+                    input -> rehydratedComponents.getPCollection(input.getValue())));
     if (!registeredTransforms.containsKey(request.getTransform().getSpec().getUrn())) {
       throw new UnsupportedOperationException(
           "Unknown urn: " + request.getTransform().getSpec().getUrn());
@@ -381,7 +374,7 @@ public class ExpansionService extends ExpansionServiceGrpc.ExpansionServiceImplB
   }
 
   @Override
-  public void close() throws Exception {
+  public void close() {
     // Nothing to do because the expansion service is stateless.
   }
 

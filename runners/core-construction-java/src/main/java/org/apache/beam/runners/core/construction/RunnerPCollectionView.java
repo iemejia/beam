@@ -98,7 +98,6 @@ public class RunnerPCollectionView<T> extends PValueBase implements PCollectionV
     if (!(other instanceof PCollectionView)) {
       return false;
     }
-    @SuppressWarnings("unchecked")
     PCollectionView<?> otherView = (PCollectionView<?>) other;
     return tag.equals(otherView.getTagInternal());
   }

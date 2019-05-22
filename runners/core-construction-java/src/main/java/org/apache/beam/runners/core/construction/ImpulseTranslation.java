@@ -18,7 +18,6 @@
 package org.apache.beam.runners.core.construction;
 
 import com.google.auto.service.AutoService;
-import java.io.IOException;
 import java.util.Collections;
 import java.util.Map;
 import org.apache.beam.model.pipeline.v1.RunnerApi;
@@ -40,7 +39,7 @@ public class ImpulseTranslation {
 
     @Override
     public FunctionSpec translate(
-        AppliedPTransform<?, ?, Impulse> application, SdkComponents components) throws IOException {
+        AppliedPTransform<?, ?, Impulse> application, SdkComponents components) {
       return FunctionSpec.newBuilder().setUrn(getUrn(application.getTransform())).build();
     }
   }

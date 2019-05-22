@@ -76,7 +76,6 @@ import org.apache.beam.sdk.values.PCollectionView;
 import org.apache.beam.sdk.values.TupleTag;
 import org.apache.beam.sdk.values.TupleTagList;
 import org.apache.beam.vendor.grpc.v1p13p1.com.google.protobuf.ByteString;
-import org.apache.beam.vendor.grpc.v1p13p1.com.google.protobuf.InvalidProtocolBufferException;
 import org.apache.beam.vendor.guava.v20_0.com.google.common.annotations.VisibleForTesting;
 import org.apache.beam.vendor.guava.v20_0.com.google.common.collect.Iterables;
 import org.apache.beam.vendor.guava.v20_0.com.google.common.collect.Sets;
@@ -159,7 +158,7 @@ public class ParDoTranslation {
     }
   }
 
-  public static ParDoPayload translateParDo(
+  private static ParDoPayload translateParDo(
       AppliedPTransform<?, ?, ParDo.MultiOutput<?, ?>> appliedPTransform, SdkComponents components)
       throws IOException {
     final ParDo.MultiOutput<?, ?> parDo = appliedPTransform.getTransform();
@@ -230,8 +229,7 @@ public class ParDoTranslation {
           }
 
           @Override
-          public Map<String, RunnerApi.StateSpec> translateStateSpecs(SdkComponents components)
-              throws IOException {
+          public Map<String, RunnerApi.StateSpec> translateStateSpecs(SdkComponents components) {
             Map<String, RunnerApi.StateSpec> stateSpecs = new HashMap<>();
             for (Map.Entry<String, StateDeclaration> state :
                 signature.stateDeclarations().entrySet()) {
@@ -278,7 +276,7 @@ public class ParDoTranslation {
     return parameters;
   }
 
-  public static DoFn<?, ?> getDoFn(ParDoPayload payload) throws InvalidProtocolBufferException {
+  public static DoFn<?, ?> getDoFn(ParDoPayload payload) {
     return doFnWithExecutionInformationFromProto(payload.getDoFn()).getDoFn();
   }
 
@@ -311,8 +309,7 @@ public class ParDoTranslation {
     return doFnWithExecutionInformationFromProto(payload.getDoFn()).getSchemaInformation();
   }
 
-  public static TupleTag<?> getMainOutputTag(ParDoPayload payload)
-      throws InvalidProtocolBufferException {
+  public static TupleTag<?> getMainOutputTag(ParDoPayload payload) {
     return doFnWithExecutionInformationFromProto(payload.getDoFn()).getMainOutputTag();
   }
 
@@ -353,7 +350,7 @@ public class ParDoTranslation {
   public static Map<TupleTag<?>, Coder<?>> getOutputCoders(AppliedPTransform<?, ?, ?> application) {
     return application.getOutputs().entrySet().stream()
         .filter(e -> e.getValue() instanceof PCollection)
-        .collect(Collectors.toMap(e -> e.getKey(), e -> ((PCollection) e.getValue()).getCoder()));
+        .collect(Collectors.toMap(Map.Entry::getKey, e -> ((PCollection) e.getValue()).getCoder()));
   }
 
   public static List<PCollectionView<?>> getSideInputs(AppliedPTransform<?, ?, ?> application)
@@ -417,7 +414,7 @@ public class ParDoTranslation {
 
   /** Translate state specs. */
   public static RunnerApi.StateSpec translateStateSpec(
-      StateSpec<?> stateSpec, final SdkComponents components) throws IOException {
+      StateSpec<?> stateSpec, final SdkComponents components) {
     final RunnerApi.StateSpec.Builder builder = RunnerApi.StateSpec.newBuilder();
 
     return stateSpec.match(
@@ -473,8 +470,7 @@ public class ParDoTranslation {
   }
 
   @VisibleForTesting
-  static StateSpec<?> fromProto(RunnerApi.StateSpec stateSpec, RehydratedComponents components)
-      throws IOException {
+  static StateSpec<?> fromProto(RunnerApi.StateSpec stateSpec, RehydratedComponents components) {
     switch (stateSpec.getSpecCase()) {
       case VALUE_SPEC:
         return StateSpecs.value(components.getCoder(stateSpec.getValueSpec().getCoderId()));
@@ -592,7 +588,7 @@ public class ParDoTranslation {
    * for portability will be removed from the enum.
    */
   // Using nullability instead of optional because of shading
-  public static @Nullable RunnerApi.Parameter translateParameter(Parameter parameter) {
+  private static @Nullable RunnerApi.Parameter translateParameter(Parameter parameter) {
     return parameter.match(
         new Cases.WithDefault</* @Nullable in Java 8 */ RunnerApi.Parameter>() {
           @Override

@@ -46,8 +46,7 @@ public class PCollectionTranslation {
   }
 
   public static PCollection<?> fromProto(
-      RunnerApi.PCollection pCollection, Pipeline pipeline, RehydratedComponents components)
-      throws IOException {
+      RunnerApi.PCollection pCollection, Pipeline pipeline, RehydratedComponents components) {
 
     Coder<?> coder = components.getCoder(pCollection.getCoderId());
     return PCollection.createPrimitiveOutputInternal(
@@ -61,7 +60,7 @@ public class PCollectionTranslation {
     return fromProto(pCollection.getIsBounded());
   }
 
-  static RunnerApi.IsBounded.Enum toProto(IsBounded bounded) {
+  private static RunnerApi.IsBounded.Enum toProto(IsBounded bounded) {
     switch (bounded) {
       case BOUNDED:
         return RunnerApi.IsBounded.Enum.BOUNDED;

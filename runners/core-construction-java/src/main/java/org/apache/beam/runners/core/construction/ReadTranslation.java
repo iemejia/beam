@@ -40,7 +40,6 @@ import org.apache.beam.sdk.util.SerializableUtils;
 import org.apache.beam.sdk.values.PBegin;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.vendor.grpc.v1p13p1.com.google.protobuf.ByteString;
-import org.apache.beam.vendor.grpc.v1p13p1.com.google.protobuf.InvalidProtocolBufferException;
 import org.apache.beam.vendor.guava.v20_0.com.google.common.collect.ImmutableMap;
 
 /**
@@ -87,8 +86,7 @@ public class ReadTranslation {
         .build();
   }
 
-  public static BoundedSource<?> boundedSourceFromProto(ReadPayload payload)
-      throws InvalidProtocolBufferException {
+  public static BoundedSource<?> boundedSourceFromProto(ReadPayload payload) {
     checkArgument(payload.getIsBounded().equals(IsBounded.Enum.BOUNDED));
     return (BoundedSource<?>)
         SerializableUtils.deserializeFromByteArray(
@@ -129,8 +127,7 @@ public class ReadTranslation {
         .build();
   }
 
-  public static UnboundedSource<?, ?> unboundedSourceFromProto(ReadPayload payload)
-      throws InvalidProtocolBufferException {
+  public static UnboundedSource<?, ?> unboundedSourceFromProto(ReadPayload payload) {
     checkArgument(payload.getIsBounded().equals(IsBounded.Enum.UNBOUNDED));
     return (UnboundedSource<?, ?>)
         SerializableUtils.deserializeFromByteArray(

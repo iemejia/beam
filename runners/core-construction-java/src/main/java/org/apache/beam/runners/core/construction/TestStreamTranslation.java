@@ -87,7 +87,7 @@ public class TestStreamTranslation {
             testStreamPayload, RehydratedComponents.forComponents(sdkComponents.toComponents()));
   }
 
-  static <T> RunnerApi.TestStreamPayload.Event eventToProto(
+  private static <T> RunnerApi.TestStreamPayload.Event eventToProto(
       TestStream.Event<T> event, Coder<T> coder) throws IOException {
     switch (event.getType()) {
       case WATERMARK:

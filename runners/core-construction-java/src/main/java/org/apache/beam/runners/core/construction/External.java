@@ -55,7 +55,7 @@ import org.apache.beam.vendor.guava.v20_0.com.google.common.collect.Iterables;
 public class External {
   private static final String EXPANDED_TRANSFORM_BASE_NAME = "external";
   private static final String IMPULSE_PREFIX = "IMPULSE";
-  private static AtomicInteger namespaceCounter = new AtomicInteger(0);
+  private static final AtomicInteger namespaceCounter = new AtomicInteger(0);
 
   private static final ExpansionServiceClientFactory DEFAULT =
       new DefaultExpansionServiceClientFactory(
@@ -196,13 +196,9 @@ public class External {
           .getOutputsMap()
           .forEach(
               (localId, pCollectionId) -> {
-                try {
-                  PCollection col = rehydratedComponents.getPCollection(pCollectionId);
-                  externalPCollectionIdMapBuilder.put(col, pCollectionId);
-                  outputMapBuilder.put(new TupleTag<>(localId), col);
-                } catch (IOException e) {
-                  throw new RuntimeException("cannot rehydrate PCollection.");
-                }
+                PCollection col = rehydratedComponents.getPCollection(pCollectionId);
+                externalPCollectionIdMapBuilder.put(col, pCollectionId);
+                outputMapBuilder.put(new TupleTag<>(localId), col);
               });
       externalPCollectionIdMap = externalPCollectionIdMapBuilder.build();
 

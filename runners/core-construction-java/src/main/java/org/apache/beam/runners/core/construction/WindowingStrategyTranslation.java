@@ -51,7 +51,7 @@ import org.joda.time.Duration;
 /** Utilities for working with {@link WindowingStrategy WindowingStrategies}. */
 public class WindowingStrategyTranslation implements Serializable {
 
-  public static AccumulationMode fromProto(RunnerApi.AccumulationMode.Enum proto) {
+  private static AccumulationMode fromProto(RunnerApi.AccumulationMode.Enum proto) {
     switch (proto) {
       case DISCARDING:
         return AccumulationMode.DISCARDING_FIRED_PANES;
@@ -71,7 +71,7 @@ public class WindowingStrategyTranslation implements Serializable {
     }
   }
 
-  public static RunnerApi.AccumulationMode.Enum toProto(AccumulationMode accumulationMode) {
+  private static RunnerApi.AccumulationMode.Enum toProto(AccumulationMode accumulationMode) {
     switch (accumulationMode) {
       case DISCARDING_FIRED_PANES:
         return RunnerApi.AccumulationMode.Enum.DISCARDING;
@@ -87,7 +87,7 @@ public class WindowingStrategyTranslation implements Serializable {
     }
   }
 
-  public static RunnerApi.ClosingBehavior.Enum toProto(ClosingBehavior closingBehavior) {
+  private static RunnerApi.ClosingBehavior.Enum toProto(ClosingBehavior closingBehavior) {
     switch (closingBehavior) {
       case FIRE_ALWAYS:
         return RunnerApi.ClosingBehavior.Enum.EMIT_ALWAYS;
@@ -103,7 +103,7 @@ public class WindowingStrategyTranslation implements Serializable {
     }
   }
 
-  public static ClosingBehavior fromProto(RunnerApi.ClosingBehavior.Enum proto) {
+  private static ClosingBehavior fromProto(RunnerApi.ClosingBehavior.Enum proto) {
     switch (proto) {
       case EMIT_ALWAYS:
         return ClosingBehavior.FIRE_ALWAYS;
@@ -123,7 +123,7 @@ public class WindowingStrategyTranslation implements Serializable {
     }
   }
 
-  public static RunnerApi.OnTimeBehavior.Enum toProto(OnTimeBehavior onTimeBehavior) {
+  private static RunnerApi.OnTimeBehavior.Enum toProto(OnTimeBehavior onTimeBehavior) {
     switch (onTimeBehavior) {
       case FIRE_ALWAYS:
         return RunnerApi.OnTimeBehavior.Enum.FIRE_ALWAYS;
@@ -139,7 +139,7 @@ public class WindowingStrategyTranslation implements Serializable {
     }
   }
 
-  public static OnTimeBehavior fromProto(RunnerApi.OnTimeBehavior.Enum proto) {
+  private static OnTimeBehavior fromProto(RunnerApi.OnTimeBehavior.Enum proto) {
     switch (proto) {
       case FIRE_ALWAYS:
         return OnTimeBehavior.FIRE_ALWAYS;
@@ -159,7 +159,7 @@ public class WindowingStrategyTranslation implements Serializable {
     }
   }
 
-  public static RunnerApi.OutputTime.Enum toProto(TimestampCombiner timestampCombiner) {
+  private static RunnerApi.OutputTime.Enum toProto(TimestampCombiner timestampCombiner) {
     switch (timestampCombiner) {
       case EARLIEST:
         return OutputTime.Enum.EARLIEST_IN_PANE;
@@ -174,7 +174,7 @@ public class WindowingStrategyTranslation implements Serializable {
     }
   }
 
-  public static TimestampCombiner timestampCombinerFromProto(RunnerApi.OutputTime.Enum proto) {
+  private static TimestampCombiner timestampCombinerFromProto(RunnerApi.OutputTime.Enum proto) {
     switch (proto) {
       case EARLIEST_IN_PANE:
         return TimestampCombiner.EARLIEST;
@@ -198,14 +198,15 @@ public class WindowingStrategyTranslation implements Serializable {
 
   // This URN says that the WindowFn is just a UDF blob the Java SDK understands
   // TODO: standardize such things
-  public static final String SERIALIZED_JAVA_WINDOWFN_URN = "beam:windowfn:javasdk:v0.1";
-  public static final String GLOBAL_WINDOWS_URN =
+  private static final String SERIALIZED_JAVA_WINDOWFN_URN = "beam:windowfn:javasdk:v0.1";
+  private static final String GLOBAL_WINDOWS_URN =
       BeamUrns.getUrn(GlobalWindowsPayload.Enum.PROPERTIES);
-  public static final String FIXED_WINDOWS_URN =
+  private static final String FIXED_WINDOWS_URN =
       BeamUrns.getUrn(FixedWindowsPayload.Enum.PROPERTIES);
-  public static final String SLIDING_WINDOWS_URN =
+  private static final String SLIDING_WINDOWS_URN =
       BeamUrns.getUrn(SlidingWindowsPayload.Enum.PROPERTIES);
-  public static final String SESSION_WINDOWS_URN = BeamUrns.getUrn(SessionsPayload.Enum.PROPERTIES);
+  private static final String SESSION_WINDOWS_URN =
+      BeamUrns.getUrn(SessionsPayload.Enum.PROPERTIES);
 
   /**
    * Converts a {@link WindowFn} into a {@link RunnerApi.MessageWithComponents} where {@link
@@ -313,19 +314,15 @@ public class WindowingStrategyTranslation implements Serializable {
    * Converts from a {@link RunnerApi.WindowingStrategy} accompanied by {@link Components} to the
    * SDK's {@link WindowingStrategy}.
    */
-  public static WindowingStrategy<?, ?> fromProto(RunnerApi.MessageWithComponents proto)
-      throws InvalidProtocolBufferException {
-    switch (proto.getRootCase()) {
-      case WINDOWING_STRATEGY:
-        return fromProto(
-            proto.getWindowingStrategy(),
-            RehydratedComponents.forComponents(proto.getComponents()));
-      default:
-        throw new IllegalArgumentException(
-            String.format(
-                "Expected a %s with components but received %s",
-                RunnerApi.WindowingStrategy.class.getCanonicalName(), proto));
+  public static WindowingStrategy<?, ?> fromProto(RunnerApi.MessageWithComponents proto) {
+    if (proto.getRootCase() == RunnerApi.MessageWithComponents.RootCase.WINDOWING_STRATEGY) {
+      return fromProto(
+          proto.getWindowingStrategy(), RehydratedComponents.forComponents(proto.getComponents()));
     }
+    throw new IllegalArgumentException(
+        String.format(
+            "Expected a %s with components but received %s",
+            RunnerApi.WindowingStrategy.class.getCanonicalName(), proto));
   }
 
   /**
@@ -333,8 +330,7 @@ public class WindowingStrategyTranslation implements Serializable {
    * the provided components to dereferences identifiers found in the proto.
    */
   public static WindowingStrategy<?, ?> fromProto(
-      RunnerApi.WindowingStrategy proto, RehydratedComponents components)
-      throws InvalidProtocolBufferException {
+      RunnerApi.WindowingStrategy proto, RehydratedComponents components) {
 
     SdkFunctionSpec windowFnSpec = proto.getWindowFn();
     WindowFn<?, ?> windowFn = windowFnFromProto(windowFnSpec);
@@ -354,6 +350,7 @@ public class WindowingStrategyTranslation implements Serializable {
         .withOnTimeBehavior(onTimeBehavior);
   }
 
+  /** Converts a windowFnSpec from its proto representation into a {@link WindowFn} object. */
   public static WindowFn<?, ?> windowFnFromProto(SdkFunctionSpec windowFnSpec) {
     try {
       String s = windowFnSpec.getSpec().getUrn();

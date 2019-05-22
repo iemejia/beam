@@ -77,7 +77,7 @@ public class Environments {
           .registerModules(ObjectMapper.findModules(ReflectHelpers.findClassLoader()));
   public static final String ENVIRONMENT_DOCKER = "DOCKER";
   public static final String ENVIRONMENT_PROCESS = "PROCESS";
-  public static final String ENVIRONMENT_EXTERNAL = "EXTERNAL";
+  private static final String ENVIRONMENT_EXTERNAL = "EXTERNAL";
   public static final String ENVIRONMENT_EMBEDDED = "EMBEDDED"; // Non Public urn for testing
   public static final String ENVIRONMENT_LOOPBACK = "LOOPBACK"; // Non Public urn for testing
 
@@ -251,22 +251,22 @@ public class Environments {
     @Nullable private Map<String, String> env;
 
     @Nullable
-    public String getOs() {
+    String getOs() {
       return os;
     }
 
     @Nullable
-    public String getArch() {
+    String getArch() {
       return arch;
     }
 
     @Nullable
-    public String getCommand() {
+    String getCommand() {
       return command;
     }
 
     @Nullable
-    public Map<String, String> getEnv() {
+    Map<String, String> getEnv() {
       return env;
     }
   }

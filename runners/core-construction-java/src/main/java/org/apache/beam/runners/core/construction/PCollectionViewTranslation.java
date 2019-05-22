@@ -19,9 +19,7 @@ package org.apache.beam.runners.core.construction;
 
 import static org.apache.beam.vendor.guava.v20_0.com.google.common.base.Preconditions.checkArgument;
 
-import java.io.IOException;
 import org.apache.beam.model.pipeline.v1.RunnerApi;
-import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.transforms.Materializations;
 import org.apache.beam.sdk.transforms.ViewFn;
 import org.apache.beam.sdk.transforms.windowing.WindowMappingFn;
@@ -30,7 +28,6 @@ import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.PCollectionView;
 import org.apache.beam.sdk.values.TupleTag;
 import org.apache.beam.sdk.values.WindowingStrategy;
-import org.apache.beam.vendor.grpc.v1p13p1.com.google.protobuf.InvalidProtocolBufferException;
 
 /** Utilities for interacting with PCollection view protos. */
 public class PCollectionViewTranslation {
@@ -44,8 +41,7 @@ public class PCollectionViewTranslation {
       String localName,
       PCollection<?> pCollection,
       RunnerApi.PTransform parDoTransform,
-      RehydratedComponents components)
-      throws IOException {
+      RehydratedComponents components) {
     checkArgument(
         localName != null,
         "%s.viewFromProto: localName must not be null",
@@ -60,23 +56,20 @@ public class PCollectionViewTranslation {
         "Unknown View Materialization URN %s",
         sideInput.getAccessPattern().getUrn());
 
-    PCollectionView<?> view =
-        new RunnerPCollectionView<>(
-            pCollection,
-            (TupleTag) tag,
-            (ViewFn) viewFn,
-            windowMappingFn,
-            windowingStrategy,
-            (Coder) pCollection.getCoder());
-    return view;
+    return new RunnerPCollectionView<>(
+        pCollection,
+        (TupleTag) tag,
+        (ViewFn) viewFn,
+        windowMappingFn,
+        windowingStrategy,
+        pCollection.getCoder());
   }
 
   /**
    * Converts a {@link org.apache.beam.model.pipeline.v1.RunnerApi.SdkFunctionSpec} into a {@link
    * ViewFn} using the URN.
    */
-  public static ViewFn<?, ?> viewFnFromProto(RunnerApi.SdkFunctionSpec viewFn)
-      throws InvalidProtocolBufferException {
+  public static ViewFn<?, ?> viewFnFromProto(RunnerApi.SdkFunctionSpec viewFn) {
     RunnerApi.FunctionSpec spec = viewFn.getSpec();
     checkArgument(
         spec.getUrn().equals(ParDoTranslation.CUSTOM_JAVA_VIEW_FN_URN),
@@ -93,7 +86,7 @@ public class PCollectionViewTranslation {
    * WindowMappingFn} using the URN.
    */
   public static WindowMappingFn<?> windowMappingFnFromProto(
-      RunnerApi.SdkFunctionSpec windowMappingFn) throws InvalidProtocolBufferException {
+      RunnerApi.SdkFunctionSpec windowMappingFn) {
     RunnerApi.FunctionSpec spec = windowMappingFn.getSpec();
     checkArgument(
         spec.getUrn().equals(ParDoTranslation.CUSTOM_JAVA_WINDOW_MAPPING_FN_URN),

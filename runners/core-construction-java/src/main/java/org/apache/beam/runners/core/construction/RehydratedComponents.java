@@ -19,7 +19,6 @@ package org.apache.beam.runners.core.construction;
 
 import static org.apache.beam.vendor.guava.v20_0.com.google.common.base.Preconditions.checkState;
 
-import java.io.IOException;
 import java.util.Collections;
 import java.util.concurrent.ExecutionException;
 import javax.annotation.Nullable;
@@ -58,7 +57,7 @@ public class RehydratedComponents {
           .build(
               new CacheLoader<String, WindowingStrategy<?, ?>>() {
                 @Override
-                public WindowingStrategy<?, ?> load(String id) throws Exception {
+                public WindowingStrategy<?, ?> load(String id) {
                   @Nullable
                   RunnerApi.WindowingStrategy windowingStrategyProto =
                       components.getWindowingStrategiesOrDefault(id, null);
@@ -129,7 +128,7 @@ public class RehydratedComponents {
    * <p>For a single instance of {@link RehydratedComponents}, this always returns the same instance
    * for a particular id.
    */
-  public PCollection<?> getPCollection(String pCollectionId) throws IOException {
+  public PCollection<?> getPCollection(String pCollectionId) {
     try {
       return pCollections.get(pCollectionId);
     } catch (ExecutionException exc) {
@@ -143,8 +142,7 @@ public class RehydratedComponents {
    * <p>For a single instance of {@link RehydratedComponents}, this always returns the same instance
    * for a particular id.
    */
-  public WindowingStrategy<?, ?> getWindowingStrategy(String windowingStrategyId)
-      throws IOException {
+  public WindowingStrategy<?, ?> getWindowingStrategy(String windowingStrategyId) {
     try {
       return windowingStrategies.get(windowingStrategyId);
     } catch (ExecutionException exc) {
@@ -158,7 +156,7 @@ public class RehydratedComponents {
    * <p>For a single instance of {@link RehydratedComponents}, this always returns the same instance
    * for a particular id.
    */
-  public Coder<?> getCoder(String coderId) throws IOException {
+  public Coder<?> getCoder(String coderId) {
     try {
       return coders.get(coderId);
     } catch (ExecutionException exc) {

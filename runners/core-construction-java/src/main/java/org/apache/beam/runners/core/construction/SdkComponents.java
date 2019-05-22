@@ -285,7 +285,7 @@ public class SdkComponents {
     String name = newIdPrefix + baseName;
     int increment = 1;
     while (existing.contains(name) || reservedIds.contains(name)) {
-      name = newIdPrefix + baseName + Integer.toString(increment);
+      name = newIdPrefix + baseName + increment;
       increment++;
     }
     return name;

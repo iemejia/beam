@@ -107,7 +107,7 @@ public class CoderTranslation {
     return componentIds;
   }
 
-  private static RunnerApi.Coder toCustomCoder(Coder<?> coder) throws IOException {
+  private static RunnerApi.Coder toCustomCoder(Coder<?> coder) {
     RunnerApi.Coder.Builder coderBuilder = RunnerApi.Coder.newBuilder();
     return coderBuilder
         .setSpec(
@@ -130,8 +130,7 @@ public class CoderTranslation {
     return fromKnownCoder(protoCoder, components);
   }
 
-  private static Coder<?> fromKnownCoder(RunnerApi.Coder coder, RehydratedComponents components)
-      throws IOException {
+  private static Coder<?> fromKnownCoder(RunnerApi.Coder coder, RehydratedComponents components) {
     String coderUrn = coder.getSpec().getSpec().getUrn();
     List<Coder<?>> coderComponents = new ArrayList<>();
     for (String componentId : coder.getComponentCoderIdsList()) {
@@ -149,7 +148,7 @@ public class CoderTranslation {
         coderComponents, coder.getSpec().getSpec().getPayload().toByteArray());
   }
 
-  private static Coder<?> fromCustomCoder(RunnerApi.Coder protoCoder) throws IOException {
+  private static Coder<?> fromCustomCoder(RunnerApi.Coder protoCoder) {
     return (Coder<?>)
         SerializableUtils.deserializeFromByteArray(
             protoCoder.getSpec().getSpec().getPayload().toByteArray(), "Custom Coder Bytes");

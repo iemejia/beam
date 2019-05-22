@@ -63,7 +63,7 @@ public class WriteFilesTranslation {
 
   @VisibleForTesting
   static WriteFilesPayload payloadForWriteFiles(
-      final WriteFiles<?, ?, ?> transform, SdkComponents components) throws IOException {
+      final WriteFiles<?, ?, ?> transform, SdkComponents components) {
     return payloadForWriteFilesLike(
         new WriteFilesLike() {
           @Override
@@ -113,7 +113,7 @@ public class WriteFilesTranslation {
   }
 
   @VisibleForTesting
-  static FileBasedSink<?, ?, ?> sinkFromProto(SdkFunctionSpec sinkProto) throws IOException {
+  static FileBasedSink<?, ?, ?> sinkFromProto(SdkFunctionSpec sinkProto) {
     checkArgument(
         sinkProto.getSpec().getUrn().equals(CUSTOM_JAVA_FILE_BASED_SINK_URN),
         "Cannot extract %s instance from %s with URN %s",
@@ -226,7 +226,7 @@ public class WriteFilesTranslation {
     }
 
     @Override
-    public FunctionSpec migrate(SdkComponents components) throws IOException {
+    public FunctionSpec migrate(SdkComponents components) {
       return FunctionSpec.newBuilder()
           .setUrn(WRITE_FILES_TRANSFORM_URN)
           .setPayload(payloadForWriteFilesLike(this, components).toByteString())
@@ -237,17 +237,10 @@ public class WriteFilesTranslation {
     public Map<TupleTag<?>, PValue> getAdditionalInputs() {
       Map<TupleTag<?>, PValue> additionalInputs = new HashMap<>();
       for (Map.Entry<String, SideInput> sideInputEntry : payload.getSideInputsMap().entrySet()) {
-        try {
-          additionalInputs.put(
-              new TupleTag<>(sideInputEntry.getKey()),
-              rehydratedComponents.getPCollection(
-                  protoTransform.getInputsOrThrow(sideInputEntry.getKey())));
-        } catch (IOException exc) {
-          throw new IllegalStateException(
-              String.format(
-                  "Could not find input with name %s for %s transform",
-                  sideInputEntry.getKey(), WriteFiles.class.getSimpleName()));
-        }
+        additionalInputs.put(
+            new TupleTag<>(sideInputEntry.getKey()),
+            rehydratedComponents.getPCollection(
+                protoTransform.getInputsOrThrow(sideInputEntry.getKey())));
       }
       return additionalInputs;
     }
@@ -261,8 +254,7 @@ public class WriteFilesTranslation {
     @Override
     public Map<String, SideInput> translateSideInputs(SdkComponents components) {
       // TODO: re-register the PCollections and UDF environments
-      return MoreObjects.firstNonNull(
-          payload.getSideInputsMap(), Collections.<String, SideInput>emptyMap());
+      return MoreObjects.firstNonNull(payload.getSideInputsMap(), Collections.emptyMap());
     }
 
     @Override
@@ -315,7 +307,7 @@ public class WriteFilesTranslation {
   }
 
   public static WriteFilesPayload payloadForWriteFilesLike(
-      WriteFilesLike writeFiles, SdkComponents components) throws IOException {
+      WriteFilesLike writeFiles, SdkComponents components) {
 
     return WriteFilesPayload.newBuilder()
         .setSink(writeFiles.translateSink(components))

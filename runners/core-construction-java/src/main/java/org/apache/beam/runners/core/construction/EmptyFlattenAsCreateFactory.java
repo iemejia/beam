@@ -57,7 +57,7 @@ public class EmptyFlattenAsCreateFactory<T>
         transform.getInputs(),
         getClass().getSimpleName());
     return PTransformReplacement.of(
-        PCollectionList.empty(transform.getPipeline()), new CreateEmptyFromList<T>());
+        PCollectionList.empty(transform.getPipeline()), new CreateEmptyFromList<>());
   }
 
   @Override

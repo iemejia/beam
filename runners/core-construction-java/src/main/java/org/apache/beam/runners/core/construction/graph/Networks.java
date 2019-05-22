@@ -131,8 +131,7 @@ public class Networks {
   public static <NodeT, EdgeT> Set<NodeT> reachableNodes(
       Network<NodeT, EdgeT> network, Set<NodeT> startNodes, Set<NodeT> endNodes) {
     Set<NodeT> visitedNodes = new HashSet<>();
-    Queue<NodeT> queuedNodes = new ArrayDeque<>();
-    queuedNodes.addAll(startNodes);
+    Queue<NodeT> queuedNodes = new ArrayDeque<>(startNodes);
     // Perform a breadth-first traversal rooted at the input node.
     while (!queuedNodes.isEmpty()) {
       NodeT currentNode = queuedNodes.remove();

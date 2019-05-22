@@ -427,7 +427,7 @@ public class PTransformTranslation {
 
       @Override
       public final FunctionSpec translate(
-          AppliedPTransform<?, ?, T> transform, SdkComponents components) throws IOException {
+          AppliedPTransform<?, ?, T> transform, SdkComponents components) {
         throw new UnsupportedOperationException(
             String.format(
                 "%s should never be translated",
@@ -463,7 +463,7 @@ public class PTransformTranslation {
      * conflict with those defined by the serialization context. In that case, the components must
      * be re-registered and a new payload returned.
      */
-    public FunctionSpec migrate(SdkComponents components) throws IOException {
+    public FunctionSpec migrate(SdkComponents components) {
       return getSpec();
     }
 

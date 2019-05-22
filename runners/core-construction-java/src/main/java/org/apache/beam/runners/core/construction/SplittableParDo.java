@@ -240,7 +240,7 @@ public class SplittableParDo<InputT, OutputT, RestrictionT>
      * @param outputTagsToCoders A map from output tag to the coder for that output, which should
      *     provide mappings for the main and all additional tags.
      */
-    public ProcessKeyedElements(
+    ProcessKeyedElements(
         DoFn<InputT, OutputT> fn,
         Coder<InputT> elementCoder,
         Coder<RestrictionT> restrictionCoder,
@@ -431,7 +431,7 @@ public class SplittableParDo<InputT, OutputT, RestrictionT>
    */
   private static class PairWithRestrictionFn<InputT, OutputT, RestrictionT>
       extends DoFn<InputT, KV<InputT, RestrictionT>> {
-    private DoFn<InputT, OutputT> fn;
+    private final DoFn<InputT, OutputT> fn;
 
     // Initialized in setup()
     private transient @Nullable DoFnInvoker<InputT, OutputT> invoker;

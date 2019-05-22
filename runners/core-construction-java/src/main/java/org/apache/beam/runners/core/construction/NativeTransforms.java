@@ -18,7 +18,6 @@
 package org.apache.beam.runners.core.construction;
 
 import com.google.auto.service.AutoService;
-import java.util.Iterator;
 import java.util.ServiceLoader;
 import java.util.function.Predicate;
 import org.apache.beam.model.pipeline.v1.RunnerApi;
@@ -46,9 +45,8 @@ public class NativeTransforms {
    * Returns true if an only if the Runner understands this transform and can handle it directly.
    */
   public static boolean isNative(RunnerApi.PTransform pTransform) {
-    Iterator<IsNativeTransform> matchers = ServiceLoader.load(IsNativeTransform.class).iterator();
-    while (matchers.hasNext()) {
-      if (matchers.next().test(pTransform)) {
+    for (IsNativeTransform isNativeTransform : ServiceLoader.load(IsNativeTransform.class)) {
+      if (isNativeTransform.test(pTransform)) {
         return true;
       }
     }

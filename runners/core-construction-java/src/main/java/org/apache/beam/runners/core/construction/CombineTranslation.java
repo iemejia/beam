@@ -29,7 +29,6 @@ import org.apache.beam.model.pipeline.v1.RunnerApi.CombinePayload;
 import org.apache.beam.model.pipeline.v1.RunnerApi.FunctionSpec;
 import org.apache.beam.model.pipeline.v1.RunnerApi.SdkFunctionSpec;
 import org.apache.beam.runners.core.construction.PTransformTranslation.TransformPayloadTranslator;
-import org.apache.beam.sdk.coders.CannotProvideCoderException;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.coders.KvCoder;
 import org.apache.beam.sdk.runners.AppliedPTransform;
@@ -90,7 +89,7 @@ public class CombineTranslation {
   }
 
   /** Produces a {@link RunnerApi.CombinePayload} from a {@link Combine}. */
-  static <K, InputT, OutputT> CombinePayload payloadForCombine(
+  private static <K, InputT, OutputT> CombinePayload payloadForCombine(
       final AppliedPTransform<
               PCollection<KV<K, InputT>>,
               PCollection<KV<K, OutputT>>,
@@ -100,27 +99,23 @@ public class CombineTranslation {
       throws IOException {
 
     GlobalCombineFn<?, ?, ?> combineFn = combine.getTransform().getFn();
-    try {
-      return RunnerApi.CombinePayload.newBuilder()
-          .setAccumulatorCoderId(
-              components.registerCoder(
-                  extractAccumulatorCoder(combineFn, (AppliedPTransform) combine)))
-          .setCombineFn(
-              SdkFunctionSpec.newBuilder()
-                  .setEnvironmentId(components.getOnlyEnvironmentId())
-                  .setSpec(
-                      FunctionSpec.newBuilder()
-                          .setUrn(JAVA_SERIALIZED_COMBINE_FN_URN)
-                          .setPayload(
-                              ByteString.copyFrom(
-                                  SerializableUtils.serializeToByteArray(
-                                      combine.getTransform().getFn())))
-                          .build())
-                  .build())
-          .build();
-    } catch (CannotProvideCoderException e) {
-      throw new IllegalArgumentException(e);
-    }
+    return RunnerApi.CombinePayload.newBuilder()
+        .setAccumulatorCoderId(
+            components.registerCoder(
+                extractAccumulatorCoder(combineFn, (AppliedPTransform) combine)))
+        .setCombineFn(
+            SdkFunctionSpec.newBuilder()
+                .setEnvironmentId(components.getOnlyEnvironmentId())
+                .setSpec(
+                    FunctionSpec.newBuilder()
+                        .setUrn(JAVA_SERIALIZED_COMBINE_FN_URN)
+                        .setPayload(
+                            ByteString.copyFrom(
+                                SerializableUtils.serializeToByteArray(
+                                    combine.getTransform().getFn())))
+                        .build())
+                .build())
+        .build();
   }
 
   @VisibleForTesting
@@ -131,21 +126,16 @@ public class CombineTranslation {
         combine.getTransform().getSideInputs().isEmpty(),
         "CombineTranslation.toProto cannot translate Combines with side inputs.");
     GlobalCombineFn<?, ?, ?> combineFn = combine.getTransform().getFn();
-    try {
-      Coder<?> accumulatorCoder = extractAccumulatorCoder(combineFn, (AppliedPTransform) combine);
-      return RunnerApi.CombinePayload.newBuilder()
-          .setAccumulatorCoderId(sdkComponents.registerCoder(accumulatorCoder))
-          .setCombineFn(toProto(combineFn, sdkComponents))
-          .build();
-    } catch (CannotProvideCoderException e) {
-      throw new IllegalArgumentException(e);
-    }
+    Coder<?> accumulatorCoder = extractAccumulatorCoder(combineFn, (AppliedPTransform) combine);
+    return RunnerApi.CombinePayload.newBuilder()
+        .setAccumulatorCoderId(sdkComponents.registerCoder(accumulatorCoder))
+        .setCombineFn(toProto(combineFn, sdkComponents))
+        .build();
   }
 
   private static <K, InputT, AccumT> Coder<AccumT> extractAccumulatorCoder(
       GlobalCombineFn<InputT, AccumT, ?> combineFn,
-      AppliedPTransform<PCollection<KV<K, InputT>>, ?, Combine.PerKey<K, InputT, ?>> transform)
-      throws CannotProvideCoderException {
+      AppliedPTransform<PCollection<KV<K, InputT>>, ?, Combine.PerKey<K, InputT, ?>> transform) {
     @SuppressWarnings("unchecked")
     PCollection<KV<K, InputT>> mainInput =
         (PCollection<KV<K, InputT>>)

@@ -65,7 +65,7 @@ public class WindowIntoTranslation {
         .build();
   }
 
-  public static WindowIntoPayload getWindowIntoPayload(AppliedPTransform<?, ?, ?> application) {
+  private static WindowIntoPayload getWindowIntoPayload(AppliedPTransform<?, ?, ?> application) {
     RunnerApi.PTransform transformProto;
     try {
       SdkComponents components = SdkComponents.create(application.getPipeline().getOptions());

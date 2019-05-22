@@ -60,7 +60,7 @@ public class TriggerTranslation implements Serializable {
   @VisibleForTesting
   static class ProtoConverter {
 
-    public RunnerApi.Trigger convertTrigger(Trigger trigger) {
+    RunnerApi.Trigger convertTrigger(Trigger trigger) {
       Method evaluationMethod = getEvaluationMethod(trigger.getClass());
       return tryConvert(evaluationMethod, trigger);
     }
