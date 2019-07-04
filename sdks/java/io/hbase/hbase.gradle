@@ -16,25 +16,62 @@
  * limitations under the License.
  */
 
-plugins { id 'org.apache.beam.module' }
-applyJavaNature()
-provideIntegrationTestingDependencies()
-enableJavaPerformanceTesting()
+/**
+ * Main HBase build file shared by all of its build targets.
+ * The file needs to be parameterized by the HBase version and the source directories.
+ *
+ * See build.gradle files for an example of how to use this script.
+ */
 
+import groovy.json.JsonOutput
 
-description = "Apache Beam :: SDKs :: Java :: IO :: HBase"
-ext.summary = "Library to read and write from/to HBase"
+apply plugin: 'org.apache.beam.module'
+applyJavaNature(
+    archivesBaseName: project.hasProperty('archives_base_name') ? archives_base_name : archivesBaseName
+)
+
+description = "Apache Beam :: SDKs :: Java :: IO :: HBase $hbase_version"
+
+/*
+ * We need to rely on manually specifying these evaluationDependsOn to ensure that
+ * the following projects are evaluated before we evaluate this project. This is because
+ * we are attempting to reference the "sourceSets.test.output" directly.
+ */
+evaluationDependsOn(":sdks:java:core")
+evaluationDependsOn(":runners:core-java")
+
+/*
+ * We have to explicitly set all directories here to make sure each
+ * version of HBase has the correct overrides set.
+ */
+sourceSets {
+  main {
+    java {
+      srcDirs = main_source_dirs
+    }
+    resources {
+      srcDirs = main_resources_dirs
+    }
+  }
+  test {
+    java {
+      srcDirs = test_source_dirs
+    }
+    resources {
+      srcDirs = test_resources_dirs
+    }
+  }
+}
 
 test {
   systemProperty "log4j.configuration", "log4j-test.properties"
+  //systemProperty "org.slf4j.simpleLogger.defaultLogLevel", "debug"
   jvmArgs "-XX:-UseGCOverheadLimit"
   if (System.getProperty("beamSurefireArgline")) {
     jvmArgs System.getProperty("beamSurefireArgline")
   }
   jvmArgs "-Dtest.build.data.basedirectory=build/test-data"
 }
-
-def hbase_version = "1.2.6"
 
 dependencies {
   compile library.java.vendored_guava_20_0
@@ -51,7 +88,6 @@ dependencies {
   testCompile library.java.hadoop_minicluster
   testCompile library.java.hadoop_hdfs
   testCompile library.java.hadoop_common
-  testCompile "org.apache.hbase:hbase-shaded-server:$hbase_version"
   testCompile("org.apache.hbase:hbase-server:$hbase_version:tests") {
     // We prevent bringing in unshaded dependencies to not conflict
     // with hbase-shaded-server and hbase-shaded-client
@@ -66,4 +102,3 @@ dependencies {
   testCompile "org.apache.hbase:hbase-hadoop2-compat:$hbase_version:tests"
   testRuntimeOnly project(":runners:direct-java")
 }
-
