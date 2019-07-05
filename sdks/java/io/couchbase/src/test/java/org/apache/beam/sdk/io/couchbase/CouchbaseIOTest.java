@@ -17,6 +17,8 @@
  */
 package org.apache.beam.sdk.io.couchbase;
 
+import static org.apache.beam.sdk.io.couchbase.CouchbaseIO.ConnectionConfiguration;
+
 import com.couchbase.client.java.Bucket;
 import com.couchbase.client.java.bucket.BucketType;
 import com.couchbase.client.java.cluster.DefaultBucketSettings;
@@ -53,8 +55,8 @@ public class CouchbaseIOTest implements Serializable {
   private static final int HTTP_PORT = 8091;
   private static final String BUCKET_NAME = "bucket-name";
   private static final String USERNAME = "admin";
-  private static final String ADMIN_PWD = "admin-pwd";
-  private static final String BUCKET_PWD = "bucket-pwd";
+  private static final String ADMIN_PASSWORD = "admin-pwd";
+  private static final String BUCKET_PASSWORD = "bucket-pwd";
   private static final int SAMPLE_SIZE = 100;
   private static final String[] scientists = {
     "Einstein",
@@ -73,13 +75,13 @@ public class CouchbaseIOTest implements Serializable {
   public static void startCouchbase() {
     couchbase =
         new CouchbaseContainer()
-            .withClusterAdmin(USERNAME, ADMIN_PWD)
+            .withClusterAdmin(USERNAME, ADMIN_PASSWORD)
             .withNewBucket(
                 DefaultBucketSettings.builder()
                     .enableFlush(true)
                     .name(BUCKET_NAME)
                     .quota(100)
-                    .password(BUCKET_PWD)
+                    .password(BUCKET_PASSWORD)
                     .type(BucketType.COUCHBASE)
                     .build());
     couchbase.start();
@@ -101,14 +103,18 @@ public class CouchbaseIOTest implements Serializable {
 
   @Test
   public void testRead() {
+    ConnectionConfiguration connectionConfiguration =
+        ConnectionConfiguration.builder()
+            .setHosts(Collections.singletonList(couchbase.getContainerIpAddress()))
+            .setHttpPort(couchbase.getMappedPort(HTTP_PORT))
+            .setCarrierPort(couchbase.getMappedPort(CARRIER_PORT))
+            .setBucket(BUCKET_NAME)
+            .setPassword(BUCKET_PASSWORD)
+            .build();
     PCollection<Document> output =
         pipeline.apply(
             CouchbaseIO.<JsonDocument>read()
-                .withHosts(Collections.singletonList(couchbase.getContainerIpAddress()))
-                .withHttpPort(couchbase.getMappedPort(HTTP_PORT))
-                .withCarrierPort(couchbase.getMappedPort(CARRIER_PORT))
-                .withBucket(BUCKET_NAME)
-                .withPassword(BUCKET_PWD)
+                .withConnectionConfiguration(connectionConfiguration)
                 .withCoder(SerializableCoder.of(JsonDocument.class)));
 
     PAssert.thatSingleton(output.apply("Count", Count.globally())).isEqualTo((long) SAMPLE_SIZE);

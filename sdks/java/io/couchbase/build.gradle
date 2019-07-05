@@ -27,11 +27,11 @@ test {
 }
 
 dependencies {
-  shadow library.java.vendored_guava_20_0
-  shadow project(path: ":sdks:java:core", configuration: "shadow")
-  shadow library.java.slf4j_api
-  shadow "com.couchbase.client:java-client:2.7.4"
-  shadow "com.couchbase.client:encryption:1.0.0"
+  compile library.java.vendored_guava_20_0
+  compile project(path: ":sdks:java:core", configuration: "shadow")
+  compile library.java.slf4j_api
+  compile "com.couchbase.client:java-client:2.7.4"
+  compile "com.couchbase.client:encryption:1.0.0"
   testCompile library.java.junit
   testCompile "org.testcontainers:couchbase:1.9.1"
   testRuntimeOnly library.java.slf4j_log4j12

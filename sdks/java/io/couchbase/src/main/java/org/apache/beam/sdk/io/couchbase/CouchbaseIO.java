@@ -31,6 +31,7 @@ import com.google.auto.value.AutoValue;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.io.Serializable;
 import java.nio.charset.Charset;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -88,23 +89,55 @@ public class CouchbaseIO {
     return new AutoValue_CouchbaseIO_Read.Builder<T>().setBatchSize(DEFAULT_BATCH_SIZE).build();
   }
 
-  /** A {@link PTransform} to read data from Couchbase. */
+  /** A POJO describing a connection configuration to Couchbase. */
   @AutoValue
-  public abstract static class Read<T> extends PTransform<PBegin, PCollection<Document>> {
-    @Nullable
+  public abstract static class ConnectionConfiguration implements Serializable {
     abstract List<String> hosts();
 
-    @Nullable
     abstract Integer httpPort();
 
-    @Nullable
     abstract Integer carrierPort();
 
-    @Nullable
     abstract String bucket();
 
     @Nullable
     abstract String password();
+
+    public static Builder builder() {
+      return new AutoValue_CouchbaseIO_ConnectionConfiguration.Builder();
+    }
+
+    @AutoValue.Builder
+    abstract static class Builder {
+      abstract Builder setHosts(List<String> hosts);
+
+      abstract Builder setHttpPort(Integer httpPort);
+
+      abstract Builder setCarrierPort(Integer carrierPort);
+
+      abstract Builder setBucket(String bucket);
+
+      abstract Builder setPassword(String password);
+
+      abstract ConnectionConfiguration autoBuild(); // not public
+
+      public ConnectionConfiguration build() {
+        ConnectionConfiguration conf = autoBuild();
+        checkArgument(!conf.hosts().isEmpty(), "hosts can not be empty");
+        checkArgument(conf.httpPort() > 0, "httpPort must be > 0, but was: %s", conf.httpPort());
+        checkArgument(
+            conf.carrierPort() > 0, "carrierPort must be > 0, but was: %s", conf.carrierPort());
+        checkArgument(conf.bucket() != null, "bucket can not be null");
+        return conf;
+      }
+    }
+  }
+
+  /** A {@link PTransform} to read data from Couchbase. */
+  @AutoValue
+  public abstract static class Read<T> extends PTransform<PBegin, PCollection<Document>> {
+    @Nullable
+    abstract ConnectionConfiguration connectionConfiguration();
 
     abstract Integer batchSize();
 
@@ -115,15 +148,8 @@ public class CouchbaseIO {
 
     @AutoValue.Builder
     abstract static class Builder<T> {
-      abstract Builder<T> setHosts(List<String> hosts);
-
-      abstract Builder<T> setHttpPort(Integer port);
-
-      abstract Builder<T> setCarrierPort(Integer port);
-
-      abstract Builder<T> setBucket(String bucket);
-
-      abstract Builder<T> setPassword(String password);
+      abstract Builder<T> setConnectionConfiguration(
+          ConnectionConfiguration connectionConfiguration);
 
       abstract Builder<T> setBatchSize(Integer batchSize);
 
@@ -132,60 +158,9 @@ public class CouchbaseIO {
       abstract Read<T> build();
     }
 
-    /**
-     * Define a list of ip to the cluster nodes.
-     *
-     * @param hosts list of ip address
-     * @return a {@link PTransform} reading data from Couchbase
-     */
-    public Read<T> withHosts(List<String> hosts) {
-      checkArgument(hosts != null, "hosts can not be null");
-      checkArgument(!hosts.isEmpty(), "hosts can not be empty");
-      return builder().setHosts(hosts).build();
-    }
-
-    /**
-     * Define the http port connecting to Couchbase.
-     *
-     * @param port the http port
-     * @return a {@link PTransform} reading data from Couchbase
-     */
-    public Read<T> withHttpPort(int port) {
-      checkArgument(port > 0, "httpPort must be > 0, but was: %s", port);
-      return builder().setHttpPort(port).build();
-    }
-
-    /**
-     * Define the carrier port connecting to Couchbase.
-     *
-     * @param port the carrier port
-     * @return a {@link PTransform} reading data from Couchbase
-     */
-    public Read<T> withCarrierPort(int port) {
-      checkArgument(port > 0, "carrierPort must be > 0, but was: %s", port);
-      return builder().setCarrierPort(port).build();
-    }
-
-    /**
-     * Define the name of bucket.
-     *
-     * @param bucket the bucket name
-     * @return a {@link PTransform} reading data from Couchbase
-     */
-    public Read<T> withBucket(String bucket) {
-      checkArgument(bucket != null, "bucket can not be null");
-      return builder().setBucket(bucket).build();
-    }
-
-    /**
-     * Define the bucket-level password to the target bucket.
-     *
-     * @param password password
-     * @return a {@link PTransform} reading data from Couchbase
-     */
-    public Read<T> withPassword(String password) {
-      checkArgument(password != null, "password can not be null");
-      return builder().setPassword(password).build();
+    public Read<T> withConnectionConfiguration(ConnectionConfiguration connectionConfiguration) {
+      checkArgument(connectionConfiguration != null, "connectionConfiguration can not be null");
+      return builder().setConnectionConfiguration(connectionConfiguration).build();
     }
 
     /**
@@ -212,15 +187,12 @@ public class CouchbaseIO {
 
     @Override
     public PCollection<Document> expand(PBegin input) {
-      checkArgument((hosts() != null), "WithHosts() is required");
-      checkArgument(bucket() != null, "withBucket() is required");
-
       return input
           .apply(Create.of((Void) null))
           .apply(ParDo.of(new GenerateOffsetRanges(this))) // 1. Fetch the total number of keys
           .apply(
               ParDo.of(
-                  new ReadData(
+                  new BaseData(
                       this))) // 2. Each reader is responsible for fetching a portion of data
           .setCoder(new DocumentCoder<>(coder())); // 3. Set up the coder of document
     }
@@ -232,7 +204,6 @@ public class CouchbaseIO {
    * @param <T>
    */
   static class DocumentCoder<T> extends Coder<Document> {
-
     private final Coder<T> coder;
 
     DocumentCoder(Coder<T> coder) {
@@ -260,25 +231,25 @@ public class CouchbaseIO {
     }
   }
 
-  abstract static class CouchbaseDoFn<K, V> extends DoFn<K, V> {
-    Cluster cluster;
-    Bucket bucket;
+  abstract static class CouchbaseBaseDoFn<K, V> extends DoFn<K, V> {
+    transient Cluster cluster;
+    transient Bucket bucket;
     final Read spec;
 
-    CouchbaseDoFn(Read spec) {
+    CouchbaseBaseDoFn(Read spec) {
       this.spec = spec;
     }
 
     @Setup
-    public void connect() {
+    public void setup() {
       DefaultCouchbaseEnvironment.Builder builder = DefaultCouchbaseEnvironment.builder();
-      if (spec.httpPort() != null) {
-        builder.bootstrapHttpDirectPort(spec.httpPort());
+      if (spec.connectionConfiguration().httpPort() != null) {
+        builder.bootstrapHttpDirectPort(spec.connectionConfiguration().httpPort());
       }
-      if (spec.carrierPort() != null) {
-        builder.bootstrapCarrierDirectPort(spec.carrierPort());
+      if (spec.connectionConfiguration().carrierPort() != null) {
+        builder.bootstrapCarrierDirectPort(spec.connectionConfiguration().carrierPort());
       }
-      cluster = CouchbaseCluster.create(builder.build(), spec.hosts());
+      cluster = CouchbaseCluster.create(builder.build(), spec.connectionConfiguration().hosts());
       // For Couchbase Server, in the previous version than 5.0, the passwordless bucket can be
       // supported.
       // But after version 5.0, the newly created user should have a username equal to bucket name
@@ -286,9 +257,11 @@ public class CouchbaseIO {
       // For more information, please go to
       // https://docs.couchbase.com/java-sdk/2.7/sdk-authentication-overview.html#legacy-connection-code
       bucket =
-          spec.password() == null
-              ? cluster.openBucket(spec.bucket())
-              : cluster.openBucket(spec.bucket(), spec.password());
+          spec.connectionConfiguration().password() == null
+              ? cluster.openBucket(spec.connectionConfiguration().bucket())
+              : cluster.openBucket(
+                  spec.connectionConfiguration().bucket(),
+                  spec.connectionConfiguration().password());
     }
 
     @Teardown
@@ -298,8 +271,7 @@ public class CouchbaseIO {
     }
   }
 
-  static class GenerateOffsetRanges extends CouchbaseDoFn<Void, OffsetRange> {
-
+  static class GenerateOffsetRanges extends CouchbaseBaseDoFn<Void, OffsetRange> {
     GenerateOffsetRanges(Read spec) {
       super(spec);
     }
@@ -332,9 +304,8 @@ public class CouchbaseIO {
     }
   }
 
-  static class ReadData extends CouchbaseDoFn<OffsetRange, Document> {
-
-    ReadData(Read spec) {
+  static class BaseData extends CouchbaseBaseDoFn<OffsetRange, Document> {
+    BaseData(Read spec) {
       super(spec);
     }
 
@@ -348,7 +319,7 @@ public class CouchbaseIO {
       String query =
           String.format(
               "SELECT RAW META().id FROM `%s` OFFSET %d LIMIT %d",
-              spec.bucket(), lowerBound, upperBound - lowerBound);
+              spec.connectionConfiguration().bucket(), lowerBound, upperBound - lowerBound);
       LOG.debug(String.format("Couchbase reader [%d, %d): %s", lowerBound, upperBound, query));
       N1qlQueryResult result = bucket.query(N1qlQuery.simple(query));
       if (!result.finalSuccess()) {
