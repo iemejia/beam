@@ -15,7 +15,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.beam.runners.core.construction;
+package org.apache.beam.sdk.transforms;
 
 import static org.apache.beam.vendor.guava.v20_0.com.google.common.base.Preconditions.checkArgument;
 
@@ -28,6 +28,7 @@ import org.apache.beam.model.expansion.v1.ExpansionApi;
 import org.apache.beam.model.pipeline.v1.Endpoints;
 import org.apache.beam.model.pipeline.v1.RunnerApi;
 import org.apache.beam.sdk.Pipeline;
+import org.apache.beam.sdk.annotations.Experimental;
 import org.apache.beam.sdk.runners.AppliedPTransform;
 import org.apache.beam.sdk.transforms.Impulse;
 import org.apache.beam.sdk.transforms.PTransform;
@@ -52,6 +53,7 @@ import org.apache.beam.vendor.guava.v20_0.com.google.common.collect.Iterables;
  * service. Note that this is a low-level API and mainly for internal use. A user may want to use
  * high-level wrapper classes rather than this one.
  */
+@Experimental
 public class External {
   private static final String EXPANDED_TRANSFORM_BASE_NAME = "external";
   private static final String IMPULSE_PREFIX = "IMPULSE";
