@@ -765,6 +765,12 @@ class BeamModulePlugin implements Plugin<Project> {
         testAnnotationProcessor jcip_annotations
       }
 
+      // Make build reproducible
+      project.tasks.withType(AbstractArchiveTask) {
+        preserveFileTimestamps = false
+        reproducibleFileOrder = true
+      }
+
       // Add the optional and provided configurations for dependencies
       // TODO: Either remove these plugins and find another way to generate the Maven poms
       // with the correct dependency scopes configured.
