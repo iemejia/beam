@@ -126,7 +126,7 @@ public class DisplayData implements Serializable {
   }
 
   @Override
-  public String toString() {
+  public final String toString() {
     StringBuilder builder = new StringBuilder();
     boolean isFirstLine = true;
     for (Item entry : entries.values()) {
@@ -298,7 +298,7 @@ public class DisplayData implements Serializable {
     }
 
     @Override
-    public String toString() {
+    public final String toString() {
       return String.format("%s%s:%s=%s", getPath(), getNamespace().getName(), getKey(), getValue());
     }
   }
@@ -417,7 +417,7 @@ public class DisplayData implements Serializable {
     }
 
     @Override
-    public String toString() {
+    public final String toString() {
       return String.format("%s:%s=%s", getNamespace(), getKey(), getValue());
     }
 
@@ -484,7 +484,7 @@ public class DisplayData implements Serializable {
     }
 
     @Override
-    public String toString() {
+    public final String toString() {
       return String.format("%s%s:%s", getPath(), getNamespace(), getKey());
     }
   }
@@ -556,7 +556,7 @@ public class DisplayData implements Serializable {
     }
 
     @Override
-    public String toString() {
+    public final String toString() {
       StringBuilder b = new StringBuilder().append("[");
       Joiner.on("/").appendTo(b, components);
       b.append("]");

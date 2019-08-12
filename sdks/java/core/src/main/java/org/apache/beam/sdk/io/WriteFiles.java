@@ -162,6 +162,7 @@ public abstract class WriteFiles<UserT, DestinationT, OutputT>
 
   abstract int getMaxNumWritersPerBundle();
 
+  @SuppressWarnings("AutoValueImmutableFields")
   abstract List<PCollectionView<?>> getSideInputs();
 
   @Nullable

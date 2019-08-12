@@ -45,7 +45,7 @@ import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Maps;
 
 /** {@link Schema} describes the fields in {@link Row}. */
 @Experimental(Kind.SCHEMAS)
-public class Schema implements Serializable {
+public final class Schema implements Serializable {
   // This is the metadata field used to store the logical type identifier.
   private static final String LOGICAL_TYPE_IDENTIFIER = "SchemaLogicalTypeId";
 
@@ -539,7 +539,7 @@ public class Schema implements Serializable {
     public abstract Schema getRowSchema();
 
     /** Returns optional extra metadata. */
-    @SuppressWarnings("mutable")
+    @SuppressWarnings({"mutable", "AutoValueImmutableFields"})
     protected abstract Map<String, ByteArrayWrapper> getMetadata();
 
     abstract FieldType.Builder toBuilder();
@@ -705,7 +705,7 @@ public class Schema implements Serializable {
     }
 
     @Override
-    public boolean equals(Object o) {
+    public final boolean equals(Object o) {
       if (!(o instanceof FieldType)) {
         return false;
       }
@@ -788,7 +788,7 @@ public class Schema implements Serializable {
     }
 
     @Override
-    public int hashCode() {
+    public final int hashCode() {
       return Arrays.deepHashCode(
           new Object[] {
             getTypeName(),
@@ -867,7 +867,7 @@ public class Schema implements Serializable {
     }
 
     @Override
-    public boolean equals(Object o) {
+    public final boolean equals(Object o) {
       if (!(o instanceof Field)) {
         return false;
       }
@@ -888,7 +888,7 @@ public class Schema implements Serializable {
     }
 
     @Override
-    public int hashCode() {
+    public final int hashCode() {
       return Objects.hash(getName(), getDescription(), getType());
     }
   }

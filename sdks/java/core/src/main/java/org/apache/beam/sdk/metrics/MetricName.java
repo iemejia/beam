@@ -51,7 +51,7 @@ public abstract class MetricName implements Serializable {
   public abstract String getName();
 
   @Override
-  public String toString() {
+  public final String toString() {
     return String.format("%s:%s", getNamespace(), getName());
   }
 

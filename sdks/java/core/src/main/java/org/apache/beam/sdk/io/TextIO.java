@@ -282,7 +282,10 @@ public class TextIO {
 
     abstract Compression getCompression();
 
-    @SuppressWarnings("mutable") // this returns an array that can be mutated by the caller
+    @SuppressWarnings({
+      "mutable",
+      "AutoValueImmutableFields"
+    }) // this returns an array that can be mutated by the caller
     @Nullable
     abstract byte[] getDelimiter();
 
@@ -453,7 +456,10 @@ public class TextIO {
 
     abstract Compression getCompression();
 
-    @SuppressWarnings("mutable") // this returns an array that can be mutated by the caller
+    @SuppressWarnings({
+      "mutable",
+      "AutoValueImmutableFields"
+    }) // this returns an array that can be mutated by the caller
     @Nullable
     abstract byte[] getDelimiter();
 
@@ -538,7 +544,10 @@ public class TextIO {
       extends PTransform<PCollection<FileIO.ReadableFile>, PCollection<String>> {
     abstract long getDesiredBundleSizeBytes();
 
-    @SuppressWarnings("mutable") // this returns an array that can be mutated by the caller
+    @SuppressWarnings({
+      "mutable",
+      "AutoValueImmutableFields"
+    }) // this returns an array that can be mutated by the caller
     @Nullable
     abstract byte[] getDelimiter();
 
@@ -617,7 +626,10 @@ public class TextIO {
     abstract ValueProvider<ResourceId> getTempDirectory();
 
     /** The delimiter between string records. */
-    @SuppressWarnings("mutable") // this returns an array that can be mutated by the caller
+    @SuppressWarnings({
+      "mutable",
+      "AutoValueImmutableFields"
+    }) // this returns an array that can be mutated by the caller
     abstract char[] getDelimiter();
 
     /** An optional header to add to each file. */

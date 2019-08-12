@@ -63,8 +63,10 @@ public abstract class AppliedPTransform<
 
   public abstract String getFullName();
 
+  @SuppressWarnings("AutoValueImmutableFields")
   public abstract Map<TupleTag<?>, PValue> getInputs();
 
+  @SuppressWarnings("AutoValueImmutableFields")
   public abstract Map<TupleTag<?>, PValue> getOutputs();
 
   public abstract TransformT getTransform();

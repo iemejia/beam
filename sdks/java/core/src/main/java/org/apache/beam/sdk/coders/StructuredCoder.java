@@ -54,6 +54,7 @@ public abstract class StructuredCoder<T> extends Coder<T> {
    * @return {@code true} if the two {@link StructuredCoder} instances have the same class and equal
    *     components.
    */
+  @SuppressWarnings("EqualsGetClass")
   @Override
   public boolean equals(Object o) {
     if (o == null || this.getClass() != o.getClass()) {

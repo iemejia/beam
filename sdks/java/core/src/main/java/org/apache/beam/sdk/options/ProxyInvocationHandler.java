@@ -88,7 +88,7 @@ import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.MutableC
  * PipelineOptions#as(Class)}.
  */
 @ThreadSafe
-class ProxyInvocationHandler implements InvocationHandler, Serializable {
+final class ProxyInvocationHandler implements InvocationHandler, Serializable {
   /**
    * No two instances of this class are considered equivalent hence we generate a random hash code.
    */
@@ -172,6 +172,7 @@ class ProxyInvocationHandler implements InvocationHandler, Serializable {
     return gettersToPropertyNames.get(method.getName());
   }
 
+  @SuppressWarnings("unused")
   private void writeObject(java.io.ObjectOutputStream stream) throws IOException {
     throw new NotSerializableException(
         "PipelineOptions objects are not serializable and should not be embedded into transforms "

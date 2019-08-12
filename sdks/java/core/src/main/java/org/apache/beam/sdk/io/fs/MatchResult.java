@@ -37,6 +37,7 @@ public abstract class MatchResult {
 
   @AutoValue
   abstract static class Success extends MatchResult {
+    @SuppressWarnings("AutoValueImmutableFields")
     abstract List<Metadata> getMetadata();
 
     @Override
