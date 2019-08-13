@@ -50,6 +50,7 @@ dependencies {
   provided library.java.jackson_annotations
   provided library.java.jackson_core
   provided library.java.jackson_databind
+  compile library.java.joda_time
   // Calcite (a dependency of Hive) bundles without repackaging Guava which is why we redeclare it
   // here so that it appears on the compile/test/runtime classpath before Calcite.
   provided library.java.hadoop_common

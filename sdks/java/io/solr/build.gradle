@@ -25,15 +25,16 @@ ext.summary = "IO to read and write from/to Solr."
 dependencies {
   compile library.java.vendored_guava_26_0_jre
   compile project(path: ":sdks:java:core", configuration: "shadow")
+  compile library.java.joda_time
+  compile library.java.slf4j_api
   compile library.java.commons_compress
   compile "org.apache.solr:solr-solrj:5.5.4"
-  compileOnly "org.apache.httpcomponents:httpclient:4.5.6"
+  compile "org.apache.httpcomponents:httpclient:4.4.1"
   testCompile project(path: ":sdks:java:core", configuration: "shadowTest")
   testCompile project(":sdks:java:io:common")
   testCompile library.java.hamcrest_core
   testCompile library.java.hamcrest_library
   testCompile library.java.junit
-  testCompile library.java.slf4j_api
   testCompile "org.apache.solr:solr-test-framework:5.5.4"
   testCompile "org.apache.solr:solr-core:5.5.4"
   testCompile "com.carrotsearch.randomizedtesting:randomizedtesting-runner:2.3.2"

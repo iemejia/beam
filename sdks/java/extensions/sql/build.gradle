@@ -116,9 +116,7 @@ dependencies {
 
   // Dependencies where one or the other appears "used" depending on classpath,
   // but it doesn't matter which is used
-  permitUsedUndeclared "com.google.code.findbugs:jsr305:3.0.2"
   permitUsedUndeclared "org.apache.avro:avro:1.8.2"
-
 }
 
 // Copy Caclcite templates and our own template into the build directory

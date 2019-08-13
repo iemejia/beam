@@ -46,6 +46,7 @@ configurations.testRuntimeClasspath {
 dependencies {
   compile project(path: ":sdks:java:core", configuration: "shadow")
   compile library.java.vendored_guava_26_0_jre
+  compile library.java.joda_time
   compile library.java.slf4j_api
   compile project(":sdks:java:io:hadoop-common")
   provided library.java.hadoop_common
@@ -83,7 +84,6 @@ dependencies {
   testCompile library.java.hamcrest_library
   testRuntimeOnly library.java.slf4j_jdk14
   testRuntimeOnly project(":runners:direct-java")
-  compile library.java.commons_io_2x
 
   delegate.add("sparkRunner", project(":sdks:java:io:hadoop-format"))
   delegate.add("sparkRunner", project(path: ":sdks:java:io:hadoop-format", configuration: "testRuntime"))
