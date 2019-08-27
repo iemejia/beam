@@ -17,4 +17,4 @@
  */
 
 /** Administrative tools for working with a Kafka cluster. */
-package org.apache.beam.runners.kafkastreams.admin;
+package org.apache.beam.runners.kafkastreams.client;

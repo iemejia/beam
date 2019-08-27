@@ -19,6 +19,7 @@ package org.apache.beam.runners.kafkastreams.state;
 
 import java.util.Arrays;
 import org.apache.beam.runners.core.StateNamespaces;
+import org.apache.beam.sdk.coders.VarIntCoder;
 import org.apache.beam.sdk.transforms.Combine.CombineFn;
 import org.apache.beam.sdk.values.KV;
 import org.apache.kafka.streams.state.KeyValueStore;
@@ -59,18 +60,19 @@ public class KCombiningStateTest {
   }
 
   private static final String KEY = "KEY";
+  private static final String ID = "ID";
   private static final Integer VALUE_ONE = 1;
   private static final Integer VALUE_TWO = 2;
 
-  private KeyValueStore<KV<String, String>, Integer> keyValueStore;
+  private KeyValueStore<KV<String, String>, byte[]> store;
   private KCombiningState<String, Integer, Integer, Integer> combiningState;
 
   @Before
   public void setUp() {
-    keyValueStore = new MockKeyValueStore<>();
+    store = new MockKeyValueStore<>();
     combiningState =
         new KCombiningState<String, Integer, Integer, Integer>(
-            KEY, StateNamespaces.global(), keyValueStore, new MockCombineFn());
+            KEY, StateNamespaces.global(), ID, store, VarIntCoder.of(), new MockCombineFn());
   }
 
   @Test

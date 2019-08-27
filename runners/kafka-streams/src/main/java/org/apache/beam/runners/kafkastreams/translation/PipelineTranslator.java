@@ -17,24 +17,30 @@
  */
 package org.apache.beam.runners.kafkastreams.translation;
 
-import com.google.common.collect.Iterables;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
+import org.apache.beam.runners.core.SplittableParDoViaKeyedWorkItems;
+import org.apache.beam.runners.core.construction.JavaReadViaImpulse;
+import org.apache.beam.runners.core.construction.PTransformMatchers;
 import org.apache.beam.runners.core.construction.PTransformTranslation;
+import org.apache.beam.runners.core.construction.SplittableParDo;
 import org.apache.beam.runners.core.construction.TransformInputs;
 import org.apache.beam.runners.kafkastreams.KafkaStreamsPipelineOptions;
 import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.coders.CoderRegistry;
 import org.apache.beam.sdk.runners.AppliedPTransform;
+import org.apache.beam.sdk.runners.PTransformOverride;
 import org.apache.beam.sdk.runners.TransformHierarchy;
 import org.apache.beam.sdk.transforms.PTransform;
 import org.apache.beam.sdk.util.WindowedValue;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.PValue;
 import org.apache.beam.sdk.values.TupleTag;
+import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Iterables;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.StreamsBuilder;
 import org.apache.kafka.streams.kstream.KStream;
@@ -64,18 +70,21 @@ public class PipelineTranslator extends Pipeline.PipelineVisitor.Defaults {
     TRANSFORM_TRANSLATORS.put(
         PTransformTranslation.GROUP_BY_KEY_TRANSFORM_URN, new GroupByKeyTransformTranslator<>());
     TRANSFORM_TRANSLATORS.put(
+        PTransformTranslation.IMPULSE_TRANSFORM_URN, new ImpulseTransformTranslator());
+    TRANSFORM_TRANSLATORS.put(
         PTransformTranslation.PAR_DO_TRANSFORM_URN, new ParDoTransformTranslator<>());
     TRANSFORM_TRANSLATORS.put(
-        PTransformTranslation.READ_TRANSFORM_URN, new ReadTransformTranslator<>());
+        SplittableParDo.SPLITTABLE_GBKIKWI_URN, new GBKIntoKeyedWorkItemsTransformTranslator<>());
     TRANSFORM_TRANSLATORS.put(
-        PTransformTranslation.RESHUFFLE_URN, new ReshuffleTransformTranslator<>());
+        SplittableParDo.SPLITTABLE_PROCESS_URN, new ProcessElementsTransformTranslator<>());
   }
 
   private final Pipeline pipeline;
   private final KafkaStreamsPipelineOptions pipelineOptions;
   private final StreamsBuilder streamsBuilder;
-  private final Map<PValue, KStream<?, ?>> streams;
+  private final Map<PValue, KStream<Void, ?>> streams;
   private final Map<PValue, Set<String>> streamSources;
+  private KStream<Void, WindowedValue<byte[]>> impulse;
   private boolean translated;
   private AppliedPTransform<?, ?, ?> currentTransform;
 
@@ -90,6 +99,14 @@ public class PipelineTranslator extends Pipeline.PipelineVisitor.Defaults {
 
   public StreamsBuilder translate() {
     if (!translated) {
+      pipeline.replaceAll(
+          Arrays.asList(
+              JavaReadViaImpulse.override(),
+              PTransformOverride.of(
+                  PTransformMatchers.splittableParDo(), new SplittableParDo.OverrideFactory<>()),
+              PTransformOverride.of(
+                  PTransformMatchers.urnEqualTo(PTransformTranslation.SPLITTABLE_PROCESS_KEYED_URN),
+                  new SplittableParDoViaKeyedWorkItems.OverrideFactory<>())));
       pipeline.traverseTopologically(this);
       translated = true;
     }
@@ -154,21 +171,18 @@ public class PipelineTranslator extends Pipeline.PipelineVisitor.Defaults {
   }
 
   Map<TupleTag<?>, Coder<?>> getOutputCoders() {
-    return currentTransform
-        .getOutputs()
-        .entrySet()
-        .stream()
+    return currentTransform.getOutputs().entrySet().stream()
         .filter(e -> e.getValue() instanceof PCollection)
         .collect(
             Collectors.toMap(e -> e.getKey(), e -> ((PCollection<?>) e.getValue()).getCoder()));
   }
 
   @SuppressWarnings("unchecked")
-  <T> KStream<Object, WindowedValue<T>> getStream(PValue value) {
-    return (KStream<Object, WindowedValue<T>>) streams.get(value);
+  <T> KStream<Void, WindowedValue<T>> getStream(PCollection<T> value) {
+    return (KStream<Void, WindowedValue<T>>) streams.get(value);
   }
 
-  void putStream(PValue value, KStream<?, ?> stream) {
+  <T> void putStream(PCollection<T> value, KStream<Void, ?> stream) {
     streams.put(value, stream);
   }
 
@@ -190,5 +204,12 @@ public class PipelineTranslator extends Pipeline.PipelineVisitor.Defaults {
 
   StreamsBuilder getStreamsBuilder() {
     return streamsBuilder;
+  }
+
+  KStream<Void, WindowedValue<byte[]>> getImpulse() {
+    if (impulse == null) {
+      impulse = ImpulseTransformTranslator.impulse(this);
+    }
+    return impulse;
   }
 }

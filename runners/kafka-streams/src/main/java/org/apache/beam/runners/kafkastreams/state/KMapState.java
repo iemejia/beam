@@ -22,6 +22,9 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Map.Entry;
 import org.apache.beam.runners.core.StateNamespace;
+import org.apache.beam.runners.kafkastreams.serde.CoderSerde;
+import org.apache.beam.sdk.coders.Coder;
+import org.apache.beam.sdk.coders.MapCoder;
 import org.apache.beam.sdk.state.MapState;
 import org.apache.beam.sdk.state.ReadableState;
 import org.apache.beam.sdk.values.KV;
@@ -34,8 +37,11 @@ public class KMapState<K, KeyT, ValueT> extends KAbstractState<K, Map<KeyT, Valu
   protected KMapState(
       K key,
       StateNamespace namespace,
-      KeyValueStore<KV<K, String>, Map<KeyT, ValueT>> keyValueStore) {
-    super(key, namespace, keyValueStore);
+      String id,
+      KeyValueStore<KV<K, String>, byte[]> store,
+      Coder<KeyT> keyCoder,
+      Coder<ValueT> valueCoder) {
+    super(key, namespace, id, store, CoderSerde.of(MapCoder.of(keyCoder, valueCoder)));
   }
 
   @Override

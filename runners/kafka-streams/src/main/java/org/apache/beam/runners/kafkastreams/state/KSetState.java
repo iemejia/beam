@@ -21,6 +21,9 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
 import org.apache.beam.runners.core.StateNamespace;
+import org.apache.beam.runners.kafkastreams.serde.CoderSerde;
+import org.apache.beam.sdk.coders.Coder;
+import org.apache.beam.sdk.coders.SetCoder;
 import org.apache.beam.sdk.state.ReadableState;
 import org.apache.beam.sdk.state.SetState;
 import org.apache.beam.sdk.values.KV;
@@ -30,8 +33,12 @@ import org.apache.kafka.streams.state.KeyValueStore;
 public class KSetState<K, V> extends KAbstractState<K, Set<V>> implements SetState<V> {
 
   protected KSetState(
-      K key, StateNamespace namespace, KeyValueStore<KV<K, String>, Set<V>> keyValueStore) {
-    super(key, namespace, keyValueStore);
+      K key,
+      StateNamespace namespace,
+      String id,
+      KeyValueStore<KV<K, String>, byte[]> store,
+      Coder<V> elemCoder) {
+    super(key, namespace, id, store, CoderSerde.of(SetCoder.of(elemCoder)));
   }
 
   @Override

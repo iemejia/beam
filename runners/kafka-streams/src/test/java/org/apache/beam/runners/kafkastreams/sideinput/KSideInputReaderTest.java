@@ -27,6 +27,7 @@ import org.apache.beam.sdk.transforms.windowing.WindowFn;
 import org.apache.beam.sdk.transforms.windowing.WindowMappingFn;
 import org.apache.beam.sdk.values.PCollectionView;
 import org.apache.kafka.streams.processor.ProcessorContext;
+import org.apache.kafka.streams.state.KeyValueStore;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
@@ -41,21 +42,19 @@ public class KSideInputReaderTest {
   private static final String STORE_NAME = "STORE_NAME";
   private static final int VALUE = 1;
 
-  private MockKeyValueStore<String, Integer> keyValueStore;
-  private ProcessorContext processorContext;
+  private KeyValueStore<String, Integer> store;
+  private ProcessorContext context;
   private PCollectionView<?> view;
   private String sideInput;
   private KSideInputReader sideInputReader;
 
   @Before
   public void setUp() {
-    keyValueStore = new MockKeyValueStore<>();
-    processorContext =
-        new MockProcessorContext(Collections.singletonMap(STORE_NAME, keyValueStore));
+    store = new MockKeyValueStore<>();
+    context = new MockProcessorContext(Collections.singletonMap(STORE_NAME, store));
     view = Mockito.mock(PCollectionView.class, Mockito.RETURNS_DEEP_STUBS);
     sideInput = STORE_NAME;
-    sideInputReader =
-        KSideInputReader.of(processorContext, Collections.singletonMap(view, sideInput));
+    sideInputReader = KSideInputReader.of(context, Collections.singletonMap(view, sideInput));
   }
 
   @Test
@@ -71,7 +70,7 @@ public class KSideInputReaderTest {
     Mockito.doReturn(WINDOW_CODER).when(windowFn).windowCoder();
     WindowMappingFn<?> windowMappingFn = view.getWindowMappingFn();
     Mockito.doReturn(GlobalWindow.INSTANCE).when(windowMappingFn).getSideInputWindow(WINDOW);
-    keyValueStore.put(StateNamespaces.window(WINDOW_CODER, WINDOW).stringKey(), VALUE);
+    store.put(StateNamespaces.window(WINDOW_CODER, WINDOW).stringKey(), VALUE);
     Assert.assertEquals(VALUE, sideInputReader.get(view, GlobalWindow.INSTANCE));
   }
 

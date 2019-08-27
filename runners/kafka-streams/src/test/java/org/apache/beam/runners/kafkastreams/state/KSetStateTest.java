@@ -21,6 +21,7 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
 import org.apache.beam.runners.core.StateNamespaces;
+import org.apache.beam.sdk.coders.VarIntCoder;
 import org.apache.beam.sdk.values.KV;
 import org.junit.Assert;
 import org.junit.Before;
@@ -30,16 +31,18 @@ import org.junit.Test;
 public class KSetStateTest {
 
   private static final String KEY = "KEY";
+  private static final String ID = "ID";
   private static final Integer VALUE_ONE = 1;
   private static final Integer VALUE_TWO = 2;
 
-  private MockKeyValueStore<KV<String, String>, Set<Integer>> keyValueStore;
+  private MockKeyValueStore<KV<String, String>, byte[]> store;
   private KSetState<String, Integer> setState;
 
   @Before
   public void setUp() {
-    keyValueStore = new MockKeyValueStore<>();
-    setState = new KSetState<String, Integer>(KEY, StateNamespaces.global(), keyValueStore);
+    store = new MockKeyValueStore<>();
+    setState =
+        new KSetState<String, Integer>(KEY, StateNamespaces.global(), ID, store, VarIntCoder.of());
   }
 
   @Test

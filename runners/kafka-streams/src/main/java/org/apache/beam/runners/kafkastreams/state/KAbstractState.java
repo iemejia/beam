@@ -21,6 +21,7 @@ import org.apache.beam.runners.core.StateNamespace;
 import org.apache.beam.runners.core.StateNamespaces;
 import org.apache.beam.sdk.state.State;
 import org.apache.beam.sdk.values.KV;
+import org.apache.kafka.common.serialization.Serde;
 import org.apache.kafka.streams.state.KeyValueStore;
 
 /**
@@ -29,26 +30,39 @@ import org.apache.kafka.streams.state.KeyValueStore;
  */
 public abstract class KAbstractState<K, V> {
 
-  private final K key;
-  private final String namespace;
-  private final KeyValueStore<KV<K, String>, V> keyValueStore;
+  private final KV<K, String> key;
+  private final KeyValueStore<KV<K, String>, byte[]> store;
+  private final Serde<V> serde;
 
   protected KAbstractState(
-      K key, StateNamespace namespace, KeyValueStore<KV<K, String>, V> keyValueStore) {
-    this.key = key;
-    this.namespace = namespace.stringKey();
-    this.keyValueStore = keyValueStore;
+      K key,
+      StateNamespace namespace,
+      String id,
+      KeyValueStore<KV<K, String>, byte[]> store,
+      Serde<V> serde) {
+    this.key = KV.of(key, namespace.stringKey() + "+" + id);
+    this.store = store;
+    this.serde = serde;
   }
 
   protected V get() {
-    return keyValueStore.get(KV.of(key, namespace));
+    byte[] value = store.get(key);
+    if (value == null) {
+      return null;
+    } else {
+      return serde.deserializer().deserialize(null, value);
+    }
   }
 
   protected void set(V value) {
-    keyValueStore.put(KV.of(key, namespace), value);
+    if (value == null) {
+      store.put(key, null);
+    } else {
+      store.put(key, serde.serializer().serialize(null, value));
+    }
   }
 
   protected void clear() {
-    keyValueStore.delete(KV.of(key, namespace));
+    store.delete(key);
   }
 }

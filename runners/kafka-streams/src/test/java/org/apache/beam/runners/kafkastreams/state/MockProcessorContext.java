@@ -18,6 +18,7 @@
 package org.apache.beam.runners.kafkastreams.state;
 
 import java.io.File;
+import java.time.Duration;
 import java.util.Map;
 import org.apache.kafka.common.header.Headers;
 import org.apache.kafka.common.serialization.Serde;
@@ -108,6 +109,11 @@ public class MockProcessorContext implements ProcessorContext {
 
   @Override
   public Cancellable schedule(long interval, PunctuationType type, Punctuator callback) {
+    return null;
+  }
+
+  @Override
+  public Cancellable schedule(Duration interval, PunctuationType type, Punctuator callback) {
     return null;
   }
 

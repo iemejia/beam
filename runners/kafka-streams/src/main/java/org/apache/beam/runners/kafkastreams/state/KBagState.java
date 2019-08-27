@@ -21,6 +21,9 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import org.apache.beam.runners.core.StateNamespace;
+import org.apache.beam.runners.kafkastreams.serde.CoderSerde;
+import org.apache.beam.sdk.coders.Coder;
+import org.apache.beam.sdk.coders.ListCoder;
 import org.apache.beam.sdk.state.BagState;
 import org.apache.beam.sdk.state.ReadableState;
 import org.apache.beam.sdk.values.KV;
@@ -30,8 +33,12 @@ import org.apache.kafka.streams.state.KeyValueStore;
 public class KBagState<K, V> extends KAbstractState<K, List<V>> implements BagState<V> {
 
   protected KBagState(
-      K key, StateNamespace namespace, KeyValueStore<KV<K, String>, List<V>> keyValueStore) {
-    super(key, namespace, keyValueStore);
+      K key,
+      StateNamespace namespace,
+      String id,
+      KeyValueStore<KV<K, String>, byte[]> store,
+      Coder<V> elemCoder) {
+    super(key, namespace, id, store, CoderSerde.of(ListCoder.of(elemCoder)));
   }
 
   @Override

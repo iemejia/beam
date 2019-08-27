@@ -18,6 +18,8 @@
 package org.apache.beam.runners.kafkastreams.state;
 
 import org.apache.beam.runners.core.StateNamespace;
+import org.apache.beam.runners.kafkastreams.serde.CoderSerde;
+import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.state.ValueState;
 import org.apache.beam.sdk.values.KV;
 import org.apache.kafka.streams.state.KeyValueStore;
@@ -26,8 +28,12 @@ import org.apache.kafka.streams.state.KeyValueStore;
 public class KValueState<K, V> extends KAbstractState<K, V> implements ValueState<V> {
 
   protected KValueState(
-      K key, StateNamespace namespace, KeyValueStore<KV<K, String>, V> keyValueStore) {
-    super(key, namespace, keyValueStore);
+      K key,
+      StateNamespace namespace,
+      String id,
+      KeyValueStore<KV<K, String>, byte[]> store,
+      Coder<V> coder) {
+    super(key, namespace, id, store, CoderSerde.of(coder));
   }
 
   @Override

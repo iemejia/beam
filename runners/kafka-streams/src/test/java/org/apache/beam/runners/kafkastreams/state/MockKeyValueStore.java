@@ -18,6 +18,7 @@
 package org.apache.beam.runners.kafkastreams.state;
 
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import org.apache.kafka.streams.KeyValue;
@@ -29,30 +30,65 @@ import org.apache.kafka.streams.state.KeyValueStore;
 /** {@link KeyValueStore} backed by a {@link Map}. */
 public class MockKeyValueStore<K, V> implements KeyValueStore<K, V> {
 
-  protected final Map<K, V> keyValueStore;
+  protected final Map<K, V> map;
 
   public MockKeyValueStore() {
-    this.keyValueStore = new HashMap<>();
+    this.map = new HashMap<>();
   }
 
   @Override
   public V get(K key) {
-    return keyValueStore.get(key);
+    return map.get(key);
   }
 
   @Override
   public V delete(K key) {
-    return keyValueStore.remove(key);
+    return map.remove(key);
   }
 
   @Override
   public void put(K key, V value) {
-    keyValueStore.put(key, value);
+    map.put(key, value);
   }
 
   @Override
   public KeyValueIterator<K, V> all() {
-    return null;
+    return new KeyValueIterator<K, V>() {
+
+      private final Iterator<Map.Entry<K, V>> iterator = map.entrySet().iterator();
+
+      private KeyValue<K, V> peek;
+
+      @Override
+      public boolean hasNext() {
+        if (peek != null) {
+          return true;
+        }
+        return iterator.hasNext();
+      }
+
+      @Override
+      public KeyValue<K, V> next() {
+        if (peek != null) {
+          KeyValue<K, V> next = peek;
+          peek = null;
+          return next;
+        }
+        Map.Entry<K, V> next = iterator.next();
+        return KeyValue.pair(next.getKey(), next.getValue());
+      }
+
+      @Override
+      public void close() {}
+
+      @Override
+      public K peekNextKey() {
+        if (peek == null) {
+          peek = next();
+        }
+        return peek.key;
+      }
+    };
   }
 
   @Override

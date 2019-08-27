@@ -36,10 +36,12 @@ public class CoderSerde<T> implements Serde<T> {
     return new CoderSerde<>(coder);
   }
 
-  private final Coder<T> coder;
+  private final Serializer<T> serializer;
+  private final Deserializer<T> deserializer;
 
   private CoderSerde(Coder<T> coder) {
-    this.coder = coder;
+    this.serializer = CoderSerializer.of(coder);
+    this.deserializer = CoderDeserializer.of(coder);
   }
 
   @Override
@@ -50,12 +52,12 @@ public class CoderSerde<T> implements Serde<T> {
 
   @Override
   public Serializer<T> serializer() {
-    return CoderSerializer.of(coder);
+    return serializer;
   }
 
   @Override
   public Deserializer<T> deserializer() {
-    return CoderDeserializer.of(coder);
+    return deserializer;
   }
 
   /** Kafka {@link Serializer} that uses a Beam Coder to encode. */

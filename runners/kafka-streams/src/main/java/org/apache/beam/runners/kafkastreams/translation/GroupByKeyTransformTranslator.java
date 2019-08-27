@@ -38,29 +38,28 @@ import org.apache.beam.runners.core.SystemReduceFn;
 import org.apache.beam.runners.core.TimerInternals;
 import org.apache.beam.runners.core.TimerInternals.TimerData;
 import org.apache.beam.runners.kafkastreams.KafkaStreamsPipelineOptions;
-import org.apache.beam.runners.kafkastreams.admin.Admin;
+import org.apache.beam.runners.kafkastreams.client.Admin;
 import org.apache.beam.runners.kafkastreams.serde.CoderSerde;
 import org.apache.beam.runners.kafkastreams.state.KStateInternals;
 import org.apache.beam.runners.kafkastreams.state.KTimerInternals;
-import org.apache.beam.sdk.coders.BitSetCoder;
+import org.apache.beam.runners.kafkastreams.translation.mapper.KWindowedVToWindowedKeyedWorkItem;
+import org.apache.beam.runners.kafkastreams.translation.mapper.WindowedKVToKWindowedV;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.coders.InstantCoder;
 import org.apache.beam.sdk.coders.KvCoder;
-import org.apache.beam.sdk.coders.ListCoder;
 import org.apache.beam.sdk.coders.StringUtf8Coder;
-import org.apache.beam.sdk.coders.VarLongCoder;
 import org.apache.beam.sdk.options.PipelineOptionsFactory;
-import org.apache.beam.sdk.transforms.Combine;
+import org.apache.beam.sdk.runners.AppliedPTransform;
 import org.apache.beam.sdk.transforms.DoFn;
+import org.apache.beam.sdk.transforms.DoFnSchemaInformation;
 import org.apache.beam.sdk.transforms.GroupByKey;
-import org.apache.beam.sdk.transforms.Sum;
 import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
-import org.apache.beam.sdk.transforms.windowing.PaneInfo.PaneInfoCoder;
 import org.apache.beam.sdk.util.WindowedValue;
 import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.TupleTag;
 import org.apache.beam.sdk.values.WindowingStrategy;
+import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.streams.KeyValue;
 import org.apache.kafka.streams.kstream.KStream;
 import org.apache.kafka.streams.kstream.Produced;
@@ -82,20 +81,13 @@ import org.joda.time.Instant;
 public class GroupByKeyTransformTranslator<K, V, W extends BoundedWindow>
     implements TransformTranslator<GroupByKey<K, V>> {
 
-  private static final String BUF = "buf";
-  private static final String CLOSED = "closed";
-  private static final String COUNT = "count";
-  private static final String DELAYED = "delayed";
-  private static final String EXTRA = "extra";
-  private static final String HOLD = "hold";
-  private static final String PANE = "pane";
-
-  @SuppressWarnings("unchecked")
   @Override
+  @SuppressWarnings("unchecked")
   public void translate(PipelineTranslator pipelineTranslator, GroupByKey<K, V> transform) {
     KafkaStreamsPipelineOptions pipelineOptions = pipelineTranslator.getPipelineOptions();
     String applicationId = Admin.applicationId(pipelineOptions);
-    String uniqueName = Admin.uniqueName(pipelineOptions, pipelineTranslator.getCurrentTransform());
+    AppliedPTransform<?, ?, ?> appliedPTransform = pipelineTranslator.getCurrentTransform();
+    String uniqueName = Admin.uniqueName(pipelineOptions, appliedPTransform);
     PCollection<KV<K, V>> input = pipelineTranslator.getInput(transform);
     KvCoder<K, V> coder = (KvCoder<K, V>) input.getCoder();
     Coder<K> keyCoder = coder.getKeyCoder();
@@ -103,20 +95,13 @@ public class GroupByKeyTransformTranslator<K, V, W extends BoundedWindow>
     WindowingStrategy<?, W> windowingStrategy =
         (WindowingStrategy<?, W>) input.getWindowingStrategy();
     TupleTag<KV<K, Iterable<V>>> outputTag = pipelineTranslator.getOutputTag(transform);
+    //    DoFnSchemaInformation doFnSchemaInformation =
+    //        ParDoTranslation.getSchemaInformation(appliedPTransform);
     Set<String> streamSources = pipelineTranslator.getStreamSources(input);
 
-    KStream<Object, WindowedValue<KV<K, V>>> stream = pipelineTranslator.getStream(input);
+    KStream<Void, WindowedValue<KV<K, V>>> stream = pipelineTranslator.getStream(input);
 
-    KStream<K, WindowedValue<V>> keyStream =
-        stream.map(
-            (key, value) ->
-                KeyValue.pair(
-                    value.getValue().getKey(),
-                    WindowedValue.of(
-                        value.getValue().getValue(),
-                        value.getTimestamp(),
-                        value.getWindows(),
-                        value.getPane())));
+    KStream<K, WindowedValue<V>> keyStream = stream.map(new WindowedKVToKWindowedV<>());
 
     String topic = applicationId + "-" + uniqueName;
     Admin.createTopicIfNeeded(pipelineOptions, topic);
@@ -124,137 +109,70 @@ public class GroupByKeyTransformTranslator<K, V, W extends BoundedWindow>
         keyStream.through(
             topic,
             Produced.with(
-                CoderSerde.of(coder.getKeyCoder()),
+                CoderSerde.of(keyCoder),
                 CoderSerde.of(
                     WindowedValue.FullWindowedValueCoder.of(
-                        coder.getValueCoder(), windowingStrategy.getWindowFn().windowCoder()))));
+                        valueCoder, windowingStrategy.getWindowFn().windowCoder()))));
 
-    KStream<Object, WindowedValue<KeyedWorkItem<K, V>>> groupByKeyKeyedWorkItemStream =
-        groupByKeyOnlyStream.flatMap(
-            (key, windowedValues) -> {
-              List<KeyValue<Object, WindowedValue<KeyedWorkItem<K, V>>>> keyedWorkItems =
-                  new ArrayList<>();
-              for (WindowedValue<V> windowedValue : windowedValues.explodeWindows()) {
-                keyedWorkItems.add(
-                    KeyValue.pair(
-                        null,
-                        windowedValue.withValue(
-                            KeyedWorkItems.elementsWorkItem(
-                                key, Collections.singletonList(windowedValues)))));
-              }
-              return keyedWorkItems;
-            });
+    KStream<Void, WindowedValue<KeyedWorkItem<K, V>>> groupByKeyKeyedWorkItemStream =
+        groupByKeyOnlyStream.flatMap(new KWindowedVToWindowedKeyedWorkItem<>());
 
-    KStream<Object, WindowedValue<KV<K, Iterable<V>>>> groupAlsoByWindow =
+    KStream<Void, WindowedValue<KV<K, Iterable<V>>>> groupAlsoByWindow =
         groupByKeyKeyedWorkItemStream.transform(
             () ->
                 new GroupAlsoByWindow(
-                    uniqueName + "-",
+                    uniqueName,
                     keyCoder,
                     valueCoder,
                     outputTag,
                     windowingStrategy,
+                    DoFnSchemaInformation.create(),
                     streamSources),
-            stateStores(pipelineTranslator, uniqueName, keyCoder, valueCoder));
+            stateStores(pipelineTranslator, uniqueName, keyCoder));
 
     PCollection<KV<K, Iterable<V>>> output = pipelineTranslator.getOutput(transform);
     pipelineTranslator.putStream(output, groupAlsoByWindow);
-    pipelineTranslator.putStreamSources(output, streamSources);
+    pipelineTranslator.putStreamSources(output, Collections.singleton(topic));
   }
 
   private String[] stateStores(
-      PipelineTranslator pipelineTranslator,
-      String uniqueName,
-      Coder<K> keyCoder,
-      Coder<V> valueCoder) {
-    // SystemReduceFn.BUFFER_NAME
-    String buf = uniqueName + "-" + BUF;
+      PipelineTranslator pipelineTranslator, String unique, Coder<K> keyCoder) {
+
+    String state = unique + KStateInternals.STATE;
     pipelineTranslator
         .getStreamsBuilder()
         .addStateStore(
             Stores.keyValueStoreBuilder(
-                Stores.persistentKeyValueStore(buf),
-                CoderSerde.of(KvCoder.of(keyCoder, StringUtf8Coder.of())),
-                CoderSerde.of(ListCoder.of(valueCoder))));
-    // TriggerStateMachineRunner.FINISHED_BITS_TAG
-    String closed = uniqueName + "-" + CLOSED;
+                    Stores.persistentKeyValueStore(state),
+                    CoderSerde.of(KvCoder.of(keyCoder, StringUtf8Coder.of())),
+                    Serdes.ByteArray())
+                .withLoggingDisabled());
+
+    String timer = unique + KTimerInternals.TIMER;
     pipelineTranslator
         .getStreamsBuilder()
         .addStateStore(
             Stores.keyValueStoreBuilder(
-                Stores.persistentKeyValueStore(closed),
-                CoderSerde.of(KvCoder.of(keyCoder, StringUtf8Coder.of())),
-                CoderSerde.of(BitSetCoder.of())));
-    // NonEmptyPanes.GeneralNonEmptyPanes.PANE_ADDITIONS_TAG
-    String count = uniqueName + "-" + COUNT;
-    pipelineTranslator
-        .getStreamsBuilder()
-        .addStateStore(
-            Stores.keyValueStoreBuilder(
-                Stores.persistentKeyValueStore(count),
-                CoderSerde.of(KvCoder.of(keyCoder, StringUtf8Coder.of())),
-                CoderSerde.of(
-                    Sum.ofLongs()
-                        .getAccumulatorCoder(
-                            pipelineTranslator.getCoderRegistry(), VarLongCoder.of()))));
-    // AfterDelayFromFirstElementStateMachine.DELAYED_UNTIL_TAG
-    String delayed = uniqueName + "-" + DELAYED;
-    pipelineTranslator
-        .getStreamsBuilder()
-        .addStateStore(
-            Stores.keyValueStoreBuilder(
-                Stores.persistentKeyValueStore(delayed),
-                CoderSerde.of(KvCoder.of(keyCoder, StringUtf8Coder.of())),
-                CoderSerde.of(new Combine.HolderCoder<>(InstantCoder.of()))));
-    // WatermarkHold.EXTRA_HOLD_TAG
-    String extra = uniqueName + "-" + EXTRA;
-    pipelineTranslator
-        .getStreamsBuilder()
-        .addStateStore(
-            Stores.keyValueStoreBuilder(
-                Stores.persistentKeyValueStore(extra),
-                CoderSerde.of(KvCoder.of(keyCoder, StringUtf8Coder.of())),
-                CoderSerde.of(InstantCoder.of())));
-    // WatermarkHold.watermarkHoldTagForTimestampCombiner(TimestampCombiner)
-    String hold = uniqueName + "-" + HOLD;
-    pipelineTranslator
-        .getStreamsBuilder()
-        .addStateStore(
-            Stores.keyValueStoreBuilder(
-                Stores.persistentKeyValueStore(hold),
-                CoderSerde.of(KvCoder.of(keyCoder, StringUtf8Coder.of())),
-                CoderSerde.of(InstantCoder.of())));
-    // PaneInfoTracker.PANE_INFO_TAG
-    String pane = uniqueName + "-" + PANE;
-    pipelineTranslator
-        .getStreamsBuilder()
-        .addStateStore(
-            Stores.keyValueStoreBuilder(
-                Stores.persistentKeyValueStore(pane),
-                CoderSerde.of(KvCoder.of(keyCoder, StringUtf8Coder.of())),
-                CoderSerde.of(PaneInfoCoder.INSTANCE)));
-    // KTimerInternals.TIMER_INTERNALS
-    String timers = uniqueName + "-" + KTimerInternals.TIMERS;
-    pipelineTranslator
-        .getStreamsBuilder()
-        .addStateStore(
-            Stores.keyValueStoreBuilder(
-                Stores.persistentKeyValueStore(timers),
-                CoderSerde.of(StringUtf8Coder.of()),
-                CoderSerde.of(KvCoder.of(keyCoder, InstantCoder.of()))));
-    return new String[] {buf, closed, count, delayed, extra, hold, pane, timers};
+                    Stores.persistentKeyValueStore(timer),
+                    CoderSerde.of(KvCoder.of(keyCoder, StringUtf8Coder.of())),
+                    CoderSerde.of(InstantCoder.of()))
+                .withLoggingDisabled());
+
+    return new String[] {state, timer};
   }
 
   private class GroupAlsoByWindow
       implements Transformer<
-          Object, WindowedValue<KeyedWorkItem<K, V>>,
-          KeyValue<Object, WindowedValue<KV<K, Iterable<V>>>>> {
+          Void,
+          WindowedValue<KeyedWorkItem<K, V>>,
+          KeyValue<Void, WindowedValue<KV<K, Iterable<V>>>>> {
 
-    private final String statePrefix;
+    private final String unique;
     private final Coder<K> keyCoder;
     private final Coder<V> valueCoder;
     private final TupleTag<KV<K, Iterable<V>>> mainOutputTag;
     private final WindowingStrategy<?, W> windowingStrategy;
+    private final DoFnSchemaInformation doFnSchemaInformation;
     private final Map<String, Instant> streamSourceWatermarks;
 
     private ProcessorContext processorContext;
@@ -264,20 +182,21 @@ public class GroupByKeyTransformTranslator<K, V, W extends BoundedWindow>
     private K key;
 
     private GroupAlsoByWindow(
-        String statePrefix,
+        String unique,
         Coder<K> keyCoder,
         Coder<V> valueCoder,
         TupleTag<KV<K, Iterable<V>>> mainOutputTag,
         WindowingStrategy<?, W> windowingStrategy,
+        DoFnSchemaInformation doFnSchemaInformation,
         Set<String> streamSources) {
-      this.statePrefix = statePrefix;
+      this.unique = unique;
       this.keyCoder = keyCoder;
       this.valueCoder = valueCoder;
       this.mainOutputTag = mainOutputTag;
       this.windowingStrategy = windowingStrategy;
+      this.doFnSchemaInformation = doFnSchemaInformation;
       this.streamSourceWatermarks =
-          streamSources
-              .stream()
+          streamSources.stream()
               .collect(
                   Collectors.toMap(string -> string, string -> BoundedWindow.TIMESTAMP_MIN_VALUE));
     }
@@ -287,12 +206,12 @@ public class GroupByKeyTransformTranslator<K, V, W extends BoundedWindow>
       this.processorContext = processorContext;
       // TODO: Get punctuateInterval from pipelineOptions.
       this.processorContext.schedule(
-          1000, PunctuationType.WALL_CLOCK_TIME, new GABWPunctuator(1000));
-      stateInternals = KStateInternals.of(statePrefix, processorContext);
+          1000, PunctuationType.WALL_CLOCK_TIME, new GroupAlsoByWindowPunctuator(1000));
+      stateInternals = KStateInternals.of(unique, processorContext);
       timerInternals =
           KTimerInternals.of(
-              statePrefix, processorContext, windowingStrategy.getWindowFn().windowCoder());
-      DoFnRunners.OutputManager outputManager = new GABWOutputManger();
+              unique, processorContext, windowingStrategy.getWindowFn().windowCoder());
+      DoFnRunners.OutputManager outputManager = new GroupAlsoByWindowOutputManger();
       SystemReduceFn<K, V, ?, Iterable<V>, W> reduceFn = SystemReduceFn.buffering(valueCoder);
       DoFn<KeyedWorkItem<K, V>, KV<K, Iterable<V>>> doFn =
           GroupAlsoByWindowViaWindowSetNewDoFn.create(
@@ -311,16 +230,17 @@ public class GroupByKeyTransformTranslator<K, V, W extends BoundedWindow>
               outputManager,
               mainOutputTag,
               Collections.emptyList(),
-              new GABWStepContext(),
+              new GroupAlsoByWindowStepContext(),
               KeyedWorkItemCoder.of(
                   keyCoder, valueCoder, windowingStrategy.getWindowFn().windowCoder()),
               Collections.emptyMap(),
-              windowingStrategy);
+              windowingStrategy,
+              doFnSchemaInformation);
     }
 
     @Override
-    public KeyValue<Object, WindowedValue<KV<K, Iterable<V>>>> transform(
-        Object object, WindowedValue<KeyedWorkItem<K, V>> windowedValue) {
+    public KeyValue<Void, WindowedValue<KV<K, Iterable<V>>>> transform(
+        Void object, WindowedValue<KeyedWorkItem<K, V>> windowedValue) {
       streamSourceWatermarks.put(
           processorContext.topic(), new Instant(processorContext.timestamp()));
       key = windowedValue.getValue().key();
@@ -334,7 +254,7 @@ public class GroupByKeyTransformTranslator<K, V, W extends BoundedWindow>
     @Override
     public void close() {}
 
-    private class GABWOutputManger implements DoFnRunners.OutputManager {
+    private class GroupAlsoByWindowOutputManger implements DoFnRunners.OutputManager {
 
       @Override
       public <T> void output(TupleTag<T> tag, WindowedValue<T> output) {
@@ -342,11 +262,11 @@ public class GroupByKeyTransformTranslator<K, V, W extends BoundedWindow>
       }
     }
 
-    private class GABWPunctuator implements Punctuator {
+    private class GroupAlsoByWindowPunctuator implements Punctuator {
 
       private final long interval;
 
-      private GABWPunctuator(long interval) {
+      private GroupAlsoByWindowPunctuator(long interval) {
         this.interval = interval;
       }
 
@@ -380,7 +300,7 @@ public class GroupByKeyTransformTranslator<K, V, W extends BoundedWindow>
       }
     }
 
-    private class GABWStepContext implements StepContext {
+    private class GroupAlsoByWindowStepContext implements StepContext {
 
       @Override
       public StateInternals stateInternals() {

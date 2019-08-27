@@ -417,7 +417,7 @@ class BeamModulePlugin implements Plugin<Project> {
     def hamcrest_version = "2.1"
     def jackson_version = "2.9.9"
     def jaxb_api_version = "2.2.12"
-    def kafka_version = "2.0.0"
+    def kafka_version = "2.3.0"
     def nemo_version = "0.1"
     def netty_version = "4.1.30.Final"
     def postgres_version = "42.2.2"

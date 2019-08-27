@@ -87,3 +87,5 @@ sdks/python/postcommit_requirements.txt
 # JetBrains Education files
 !**/study_project.xml
 **/.coursecreator/**/*
+/.gradle/
+/build/

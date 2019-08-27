@@ -42,18 +42,17 @@ import org.joda.time.Instant;
  */
 public class KTimerInternals<K, W extends BoundedWindow> implements TimerInternals {
 
-  public static final String TIMERS = "timers";
+  public static final String TIMER = "-timer";
 
   @SuppressWarnings("unchecked")
   public static <K, W extends BoundedWindow> KTimerInternals<K, W> of(
-      String statePrefix, ProcessorContext processorContext, Coder<W> windowCoder) {
+      String unique, ProcessorContext processorContext, Coder<W> windowCoder) {
     return new KTimerInternals<>(
-        (KeyValueStore<String, KV<K, Instant>>)
-            processorContext.getStateStore(statePrefix + TIMERS),
+        (KeyValueStore<KV<K, String>, Instant>) processorContext.getStateStore(unique + TIMER),
         windowCoder);
   }
 
-  private final KeyValueStore<String, KV<K, Instant>> keyValueStore;
+  private final KeyValueStore<KV<K, String>, Instant> store;
   private final Coder<W> windowCoder;
   private final Set<String> eventTimers;
   private final Set<String> processingTimers;
@@ -65,9 +64,8 @@ public class KTimerInternals<K, W extends BoundedWindow> implements TimerInterna
   private Instant outputWatermarkTime;
   private K key;
 
-  private KTimerInternals(
-      KeyValueStore<String, KV<K, Instant>> keyValueStore, Coder<W> windowCoder) {
-    this.keyValueStore = keyValueStore;
+  private KTimerInternals(KeyValueStore<KV<K, String>, Instant> store, Coder<W> windowCoder) {
+    this.store = store;
     this.windowCoder = windowCoder;
     this.eventTimers = new HashSet<>();
     this.processingTimers = new HashSet<>();
@@ -86,8 +84,7 @@ public class KTimerInternals<K, W extends BoundedWindow> implements TimerInterna
   @Override
   public void setTimer(
       StateNamespace namespace, String timerId, Instant target, TimeDomain timeDomain) {
-    String id = timerId + "+" + namespace.stringKey();
-    keyValueStore.put(id, KV.of(key, target));
+    store.put(KV.of(key, id(namespace, timerId)), target);
     switch (timeDomain) {
       case EVENT_TIME:
         eventTimers.add(timerId);
@@ -115,8 +112,7 @@ public class KTimerInternals<K, W extends BoundedWindow> implements TimerInterna
   @Override
   public void deleteTimer(
       StateNamespace namespace, String timerId, @Nullable TimeDomain timeDomain) {
-    String key = timerId + "+" + namespace.stringKey();
-    keyValueStore.delete(key);
+    store.delete(KV.of(key, id(namespace, timerId)));
   }
 
   @Override
@@ -166,38 +162,47 @@ public class KTimerInternals<K, W extends BoundedWindow> implements TimerInterna
   }
 
   public List<KV<K, TimerData>> getFireableTimers() {
-    Iterator<KeyValue<String, KV<K, Instant>>> keyValueIterator = keyValueStore.all();
+    Iterator<KeyValue<KV<K, String>, Instant>> iterator = store.all();
     List<KV<K, TimerData>> fireableTimers = new ArrayList<>();
-    while (keyValueIterator.hasNext()) {
-      KeyValue<String, KV<K, Instant>> keyValue = keyValueIterator.next();
+    List<KV<K, String>> deleteTimers = new ArrayList<>();
+    while (iterator.hasNext()) {
+      KeyValue<KV<K, String>, Instant> keyValue = iterator.next();
 
-      String id = keyValue.key;
-      int lastIndexOfPlus = id.lastIndexOf("+");
-      String timerId = id.substring(0, lastIndexOfPlus);
-      String namespaceStringKey = id.substring(lastIndexOfPlus + 1);
+      String id = keyValue.key.getValue();
+      int separator = id.indexOf("+");
+      String namespaceStringKey = id.substring(0, separator);
+      String timerId = id.substring(separator + 1);
 
       TimeDomain domain;
       Instant currentDomainTime;
       if (eventTimers.contains(timerId)) {
         domain = TimeDomain.EVENT_TIME;
-        currentDomainTime = inputWatermarkTime;
+        currentDomainTime = currentInputWatermarkTime();
       } else if (processingTimers.contains(timerId)) {
         domain = TimeDomain.PROCESSING_TIME;
-        currentDomainTime = processingTime;
+        currentDomainTime = currentProcessingTime();
       } else if (synchronizedProcessingTimers.contains(timerId)) {
         domain = TimeDomain.SYNCHRONIZED_PROCESSING_TIME;
-        currentDomainTime = synchronizedProcessingTime;
+        currentDomainTime = currentSynchronizedProcessingTime();
       } else {
         throw new RuntimeException("Invalid timerId: " + timerId);
       }
 
-      Instant timestamp = keyValue.value.getValue();
+      Instant timestamp = keyValue.value;
       if (currentDomainTime.isAfter(timestamp)) {
         StateNamespace namespace = StateNamespaces.fromString(namespaceStringKey, windowCoder);
         TimerData timerData = TimerData.of(timerId, namespace, timestamp, domain);
-        fireableTimers.add(KV.of(keyValue.value.getKey(), timerData));
+        fireableTimers.add(KV.of(keyValue.key.getKey(), timerData));
+        deleteTimers.add(keyValue.key);
       }
     }
+    for (KV<K, String> deleteTimer : deleteTimers) {
+      store.delete(deleteTimer);
+    }
     return fireableTimers;
+  }
+
+  private String id(StateNamespace namespace, String timerId) {
+    return namespace.stringKey() + "+" + timerId;
   }
 }

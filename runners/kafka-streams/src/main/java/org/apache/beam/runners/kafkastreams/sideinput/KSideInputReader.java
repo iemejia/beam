@@ -24,7 +24,7 @@ import org.apache.beam.runners.core.SideInputReader;
 import org.apache.beam.runners.core.StateNamespace;
 import org.apache.beam.runners.core.StateNamespaces;
 import org.apache.beam.runners.kafkastreams.KafkaStreamsPipelineOptions;
-import org.apache.beam.runners.kafkastreams.admin.Admin;
+import org.apache.beam.runners.kafkastreams.client.Admin;
 import org.apache.beam.runners.kafkastreams.serde.CoderSerde;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
@@ -96,7 +96,7 @@ public class KSideInputReader implements SideInputReader {
       KafkaStreamsPipelineOptions pipelineOptions,
       StreamsBuilder streamsBuilder,
       PCollectionView<ViewT> collectionView,
-      KStream<Object, WindowedValue<InputT>> stream) {
+      KStream<Void, WindowedValue<InputT>> stream) {
     PCollection<InputT> collection = (PCollection<InputT>) collectionView.getPCollection();
     Coder<W> windowCoder = (Coder<W>) collection.getWindowingStrategy().getWindowFn().windowCoder();
 
@@ -105,12 +105,12 @@ public class KSideInputReader implements SideInputReader {
             (object, windowedValue) -> {
               return ((Collection<W>) windowedValue.getWindows())
                   .stream()
-                  .map(
-                      window ->
-                          KeyValue.pair(
-                              StateNamespaces.window(windowCoder, window).stringKey(),
-                              windowedValue.getValue()))
-                  .collect(Collectors.toList());
+                      .map(
+                          window ->
+                              KeyValue.pair(
+                                  StateNamespaces.window(windowCoder, window).stringKey(),
+                                  windowedValue.getValue()))
+                      .collect(Collectors.toList());
             });
 
     String applicationId = Admin.applicationId(pipelineOptions);

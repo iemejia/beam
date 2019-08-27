@@ -17,10 +17,14 @@
  */
 package org.apache.beam.runners.kafkastreams.state;
 
-import com.google.common.collect.Lists;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.stream.Collectors;
+import java.util.stream.StreamSupport;
 import org.apache.beam.runners.core.StateNamespaces;
+import org.apache.beam.sdk.coders.StringUtf8Coder;
+import org.apache.beam.sdk.coders.VarIntCoder;
 import org.apache.beam.sdk.values.KV;
 import org.apache.kafka.streams.state.KeyValueStore;
 import org.junit.Assert;
@@ -31,18 +35,21 @@ import org.junit.Test;
 public class KMapStateTest {
 
   private static final String KEY = "KEY";
+  private static final String ID = "ID";
   private static final String KEY_ONE = "KEY_ONE";
   private static final Integer VALUE_ONE = 1;
   private static final String KEY_TWO = "KEY_TWO";
   private static final Integer VALUE_TWO = 2;
 
-  private KeyValueStore<KV<String, String>, Map<String, Integer>> keyValueStore;
+  private KeyValueStore<KV<String, String>, byte[]> store;
   private KMapState<String, String, Integer> mapState;
 
   @Before
   public void setUp() {
-    keyValueStore = new MockKeyValueStore<>();
-    mapState = new KMapState<String, String, Integer>(KEY, StateNamespaces.global(), keyValueStore);
+    store = new MockKeyValueStore<>();
+    mapState =
+        new KMapState<String, String, Integer>(
+            KEY, StateNamespaces.global(), ID, store, StringUtf8Coder.of(), VarIntCoder.of());
   }
 
   @Test
@@ -66,8 +73,10 @@ public class KMapStateTest {
     Assert.assertEquals(expected.entrySet(), mapState.entries().readLater().read());
     Assert.assertEquals(expected.keySet(), mapState.keys().readLater().read());
     Assert.assertEquals(
-        Lists.newArrayList(expected.values()),
-        Lists.newArrayList(mapState.values().readLater().read()));
+        new HashSet<>(expected.values()),
+        new HashSet<>(
+            StreamSupport.stream(mapState.values().readLater().read().spliterator(), false)
+                .collect(Collectors.toList())));
   }
 
   @Test
@@ -84,8 +93,10 @@ public class KMapStateTest {
     Assert.assertEquals(expected.entrySet(), mapState.entries().readLater().read());
     Assert.assertEquals(expected.keySet(), mapState.keys().readLater().read());
     Assert.assertEquals(
-        Lists.newArrayList(expected.values()),
-        Lists.newArrayList(mapState.values().readLater().read()));
+        new HashSet<>(expected.values()),
+        new HashSet<>(
+            StreamSupport.stream(mapState.values().readLater().read().spliterator(), false)
+                .collect(Collectors.toList())));
   }
 
   @Test

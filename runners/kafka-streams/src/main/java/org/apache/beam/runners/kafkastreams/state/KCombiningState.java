@@ -19,6 +19,8 @@ package org.apache.beam.runners.kafkastreams.state;
 
 import java.util.Arrays;
 import org.apache.beam.runners.core.StateNamespace;
+import org.apache.beam.runners.kafkastreams.serde.CoderSerde;
+import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.state.CombiningState;
 import org.apache.beam.sdk.state.ReadableState;
 import org.apache.beam.sdk.transforms.Combine.CombineFn;
@@ -34,9 +36,11 @@ public class KCombiningState<K, InputT, AccumT, OutputT> extends KAbstractState<
   protected KCombiningState(
       K key,
       StateNamespace namespace,
-      KeyValueStore<KV<K, String>, AccumT> keyValueStore,
+      String id,
+      KeyValueStore<KV<K, String>, byte[]> store,
+      Coder<AccumT> accumCoder,
       CombineFn<InputT, AccumT, OutputT> combineFn) {
-    super(key, namespace, keyValueStore);
+    super(key, namespace, id, store, CoderSerde.of(accumCoder));
     this.combineFn = combineFn;
   }
 

@@ -23,7 +23,7 @@ import java.util.List;
 import org.apache.beam.runners.core.construction.ReadTranslation;
 import org.apache.beam.runners.core.construction.UnboundedReadFromBoundedSource;
 import org.apache.beam.runners.kafkastreams.KafkaStreamsPipelineOptions;
-import org.apache.beam.runners.kafkastreams.admin.Admin;
+import org.apache.beam.runners.kafkastreams.client.Admin;
 import org.apache.beam.runners.kafkastreams.serde.CoderSerde;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.coders.KvCoder;
@@ -64,7 +64,10 @@ import org.apache.kafka.streams.processor.To;
  * from an {@link UnboundedReader} starting at its {@link UnboundedSource.CheckpointMark}. After
  * reading records the UnboundedSource is written back to the UnboundedSources topic with its latest
  * CheckpointMark.
+ *
+ * @deprecated Use ImpulseTransformTranslator.
  */
+@Deprecated
 public class ReadTransformTranslator<
         OutputT, CheckpointMarkT extends UnboundedSource.CheckpointMark>
     implements TransformTranslator<PTransform<PBegin, PCollection<OutputT>>> {
@@ -85,12 +88,10 @@ public class ReadTransformTranslator<
     createTopicIfNeeded(pipelineOptions, topic, unboundedSource, unboundedSourceCoder);
 
     KStream<Integer, KV<UnboundedSource<OutputT, CheckpointMarkT>, CheckpointMarkT>> stream =
-        pipelineTranslator
-            .getStreamsBuilder()
-            .stream(
-                topic,
-                Consumed.with(Serdes.Integer(), CoderSerde.of(unboundedSourceCoder))
-                    .withOffsetResetPolicy(Topology.AutoOffsetReset.EARLIEST));
+        pipelineTranslator.getStreamsBuilder().stream(
+            topic,
+            Consumed.with(Serdes.Integer(), CoderSerde.of(unboundedSourceCoder))
+                .withOffsetResetPolicy(Topology.AutoOffsetReset.EARLIEST));
 
     Predicate<Object, Object>[] predicates =
         new Predicate[] {
@@ -110,8 +111,9 @@ public class ReadTransformTranslator<
     KStream<Object, Object>[] readStreams =
         stream.transform(() -> new ReadTransformer(pipelineOptions)).branch(predicates);
 
-    KStream<Bytes, WindowedValue<OutputT>> outputStream =
-        (KStream<Bytes, WindowedValue<OutputT>>) (KStream<?, ?>) readStreams[0];
+    KStream<Void, WindowedValue<OutputT>> outputStream =
+        ((KStream<Bytes, WindowedValue<OutputT>>) (KStream<?, ?>) readStreams[0])
+            .map((key, value) -> KeyValue.pair(null, value));
     PCollection<OutputT> output = pipelineTranslator.getOutput(transform);
     pipelineTranslator.putStream(output, outputStream);
     pipelineTranslator.putStreamSources(output, Collections.singleton(topic));
@@ -177,7 +179,8 @@ public class ReadTransformTranslator<
 
   private class ReadTransformer
       implements Transformer<
-          Integer, KV<UnboundedSource<OutputT, CheckpointMarkT>, CheckpointMarkT>,
+          Integer,
+          KV<UnboundedSource<OutputT, CheckpointMarkT>, CheckpointMarkT>,
           KeyValue<Object, Object>> {
 
     private final PipelineOptions pipelineOptions;

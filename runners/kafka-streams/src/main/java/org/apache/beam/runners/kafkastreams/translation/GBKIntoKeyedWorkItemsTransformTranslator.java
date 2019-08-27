@@ -17,56 +17,48 @@
  */
 package org.apache.beam.runners.kafkastreams.translation;
 
-import java.util.Set;
+import java.util.Collections;
+import org.apache.beam.runners.core.KeyedWorkItem;
+import org.apache.beam.runners.core.SplittableParDoViaKeyedWorkItems.GBKIntoKeyedWorkItems;
 import org.apache.beam.runners.kafkastreams.KafkaStreamsPipelineOptions;
-import org.apache.beam.runners.kafkastreams.admin.Admin;
+import org.apache.beam.runners.kafkastreams.client.Admin;
 import org.apache.beam.runners.kafkastreams.serde.CoderSerde;
+import org.apache.beam.runners.kafkastreams.translation.mapper.KWindowedVToWindowedKeyedWorkItem;
+import org.apache.beam.runners.kafkastreams.translation.mapper.WindowedKVToKWindowedV;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.coders.KvCoder;
-import org.apache.beam.sdk.transforms.Reshuffle;
 import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
 import org.apache.beam.sdk.util.WindowedValue;
 import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.WindowingStrategy;
-import org.apache.kafka.streams.KeyValue;
 import org.apache.kafka.streams.kstream.KStream;
 import org.apache.kafka.streams.kstream.Produced;
 
-@SuppressWarnings({"unchecked", "deprecation"})
-public class ReshuffleTransformTranslator<K, V, W extends BoundedWindow>
-    implements TransformTranslator<Reshuffle<K, V>> {
+public class GBKIntoKeyedWorkItemsTransformTranslator<K, InputT, W extends BoundedWindow>
+    implements TransformTranslator<GBKIntoKeyedWorkItems<K, InputT>> {
 
   @Override
-  public void translate(PipelineTranslator pipelineTranslator, Reshuffle<K, V> transform) {
+  @SuppressWarnings("unchecked")
+  public void translate(
+      PipelineTranslator pipelineTranslator, GBKIntoKeyedWorkItems<K, InputT> transform) {
     KafkaStreamsPipelineOptions pipelineOptions = pipelineTranslator.getPipelineOptions();
     String applicationId = Admin.applicationId(pipelineOptions);
     String uniqueName = Admin.uniqueName(pipelineOptions, pipelineTranslator.getCurrentTransform());
-    PCollection<KV<K, V>> input = pipelineTranslator.getInput(transform);
-    KvCoder<K, V> coder = (KvCoder<K, V>) input.getCoder();
+    PCollection<KV<K, InputT>> input = pipelineTranslator.getInput(transform);
+    KvCoder<K, InputT> coder = (KvCoder<K, InputT>) input.getCoder();
     Coder<K> keyCoder = coder.getKeyCoder();
-    Coder<V> valueCoder = coder.getValueCoder();
+    Coder<InputT> valueCoder = coder.getValueCoder();
     WindowingStrategy<?, W> windowingStrategy =
         (WindowingStrategy<?, W>) input.getWindowingStrategy();
-    PCollection<KV<K, V>> output = pipelineTranslator.getOutput(transform);
-    Set<String> streamSources = pipelineTranslator.getStreamSources(input);
 
-    KStream<Object, WindowedValue<KV<K, V>>> stream = pipelineTranslator.getStream(input);
+    KStream<Void, WindowedValue<KV<K, InputT>>> stream = pipelineTranslator.getStream(input);
 
-    KStream<K, WindowedValue<V>> keyStream =
-        stream.map(
-            (key, value) ->
-                KeyValue.pair(
-                    value.getValue().getKey(),
-                    WindowedValue.of(
-                        value.getValue().getValue(),
-                        value.getTimestamp(),
-                        value.getWindows(),
-                        value.getPane())));
+    KStream<K, WindowedValue<InputT>> keyStream = stream.map(new WindowedKVToKWindowedV<>());
 
     String topic = applicationId + "-" + uniqueName;
     Admin.createTopicIfNeeded(pipelineOptions, topic);
-    KStream<K, WindowedValue<V>> groupByKeyStream =
+    KStream<K, WindowedValue<InputT>> groupByKeyOnlyStream =
         keyStream.through(
             topic,
             Produced.with(
@@ -75,18 +67,11 @@ public class ReshuffleTransformTranslator<K, V, W extends BoundedWindow>
                     WindowedValue.FullWindowedValueCoder.of(
                         valueCoder, windowingStrategy.getWindowFn().windowCoder()))));
 
-    KStream<Object, WindowedValue<KV<K, V>>> reshuffleStream =
-        groupByKeyStream.map(
-            (key, windowedValue) ->
-                KeyValue.pair(
-                    null,
-                    WindowedValue.of(
-                        KV.of(key, windowedValue.getValue()),
-                        windowedValue.getTimestamp(),
-                        windowedValue.getWindows(),
-                        windowedValue.getPane())));
+    KStream<Void, WindowedValue<KeyedWorkItem<K, InputT>>> groupByKeyKeyedWorkItemStream =
+        groupByKeyOnlyStream.flatMap(new KWindowedVToWindowedKeyedWorkItem<>());
 
-    pipelineTranslator.putStream(output, reshuffleStream);
-    pipelineTranslator.putStreamSources(output, streamSources);
+    PCollection<KeyedWorkItem<K, InputT>> output = pipelineTranslator.getOutput(transform);
+    pipelineTranslator.putStream(output, groupByKeyKeyedWorkItemStream);
+    pipelineTranslator.putStreamSources(output, Collections.singleton(topic));
   }
 }

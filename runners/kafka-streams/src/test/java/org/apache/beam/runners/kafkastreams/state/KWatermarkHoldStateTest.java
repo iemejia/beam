@@ -29,18 +29,19 @@ import org.junit.Test;
 public class KWatermarkHoldStateTest {
 
   private static final String KEY = "KEY";
+  private static final String ID = "ID";
   private static final Instant WATERMARK_ONE = Instant.now();
   private static final Instant WATERMARK_TWO = Instant.now();
 
-  private MockKeyValueStore<KV<String, String>, Instant> keyValueStore;
+  private MockKeyValueStore<KV<String, String>, byte[]> store;
   private KWatermarkHoldState<String> watermarkHoldeState;
 
   @Before
   public void setUp() {
-    keyValueStore = new MockKeyValueStore<>();
+    store = new MockKeyValueStore<>();
     watermarkHoldeState =
         new KWatermarkHoldState<String>(
-            KEY, StateNamespaces.global(), keyValueStore, TimestampCombiner.LATEST);
+            KEY, StateNamespaces.global(), ID, store, TimestampCombiner.LATEST);
   }
 
   @Test

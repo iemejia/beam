@@ -18,6 +18,8 @@
 package org.apache.beam.runners.kafkastreams.state;
 
 import org.apache.beam.runners.core.StateNamespace;
+import org.apache.beam.runners.kafkastreams.serde.CoderSerde;
+import org.apache.beam.sdk.coders.InstantCoder;
 import org.apache.beam.sdk.state.ReadableState;
 import org.apache.beam.sdk.state.WatermarkHoldState;
 import org.apache.beam.sdk.transforms.windowing.TimestampCombiner;
@@ -34,9 +36,10 @@ public class KWatermarkHoldState<K> extends KAbstractState<K, Instant>
   protected KWatermarkHoldState(
       K key,
       StateNamespace namespace,
-      KeyValueStore<KV<K, String>, Instant> keyValueStore,
+      String id,
+      KeyValueStore<KV<K, String>, byte[]> keyValueStore,
       TimestampCombiner timestampCombiner) {
-    super(key, namespace, keyValueStore);
+    super(key, namespace, id, keyValueStore, CoderSerde.of(InstantCoder.of()));
     this.timestampCombiner = timestampCombiner;
   }
 

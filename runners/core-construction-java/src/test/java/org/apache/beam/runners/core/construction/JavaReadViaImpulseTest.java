@@ -33,6 +33,7 @@ import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.coders.VarLongCoder;
 import org.apache.beam.sdk.io.BoundedSource;
 import org.apache.beam.sdk.io.CountingSource;
+import org.apache.beam.sdk.io.GenerateSequence;
 import org.apache.beam.sdk.io.Read;
 import org.apache.beam.sdk.options.PipelineOptions;
 import org.apache.beam.sdk.runners.TransformHierarchy;
@@ -46,6 +47,7 @@ import org.apache.beam.sdk.transforms.ParDo;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.PValue;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Iterables;
+import org.joda.time.Instant;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
@@ -146,6 +148,17 @@ public class JavaReadViaImpulseTest {
     assertThat(
         p.apply(JavaReadViaImpulse.bounded(fixedCoderSource)).getCoder(),
         equalTo(BigEndianIntegerCoder.of()));
+  }
+
+  @Test
+  @Category(NeedsRunner.class)
+  public void testUnboundedRead() {
+    PCollection<Long> read =
+        p.apply(GenerateSequence.from(0).to(10).withTimestampFn(l -> Instant.ofEpochMilli(l)));
+    p.replaceAll(Collections.singletonList(JavaReadViaImpulse.unboundedOverride()));
+
+    PAssert.that(read).containsInAnyOrder(0L, 1L, 2L, 3L, 4L, 5L, 6L, 7L, 8L, 9L);
+    p.run();
   }
 
   private static void assertNotReadTransform(PTransform<?, ?> transform) {

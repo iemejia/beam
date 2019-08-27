@@ -16,26 +16,26 @@
  * limitations under the License.
  */
 
-apply plugin: org.apache.beam.gradle.BeamModulePlugin
+plugins { id 'org.apache.beam.module' }
 applyJavaNature()
 
 description = "Apache Beam :: Runners :: Kafka-Streams"
 
 dependencies {
-  shadow project(path: ":beam-model-pipeline", configuration: "shadow")
-  shadow project(path: ":beam-sdks-java-core", configuration: "shadow")
-  shadow project(path: ":beam-runners-core-construction-java", configuration: "shadow")
-  shadow project(path: ":beam-runners-core-java", configuration: "shadow")
-  shadow library.java.kafka_clients
-  shadow library.java.kafka_streams
-  shadow library.java.slf4j_api
-  shadowTest project(path: ":beam-sdks-java-io-kafka", configuration: "shadow")
-  shadowTest library.java.guava
-  shadowTest library.java.junit
-  shadowTest library.java.kafka_2_11
-  shadowTest library.java.kafka_2_11_test
-  shadowTest library.java.kafka_clients_test
-  shadowTest library.java.kafka_streams_test
-  shadowTest library.java.mockito_core
-  shadowTest library.java.slf4j_simple
+  compile project(path: ":model:pipeline", configuration: "shadow")
+  compile project(":runners:core-construction-java")
+  compile project(":runners:core-java")
+  compile project(path: ":sdks:java:core", configuration: "shadow")
+  compile library.java.kafka_clients
+  compile library.java.kafka_streams
+  compile library.java.slf4j_api
+  testCompile project(":sdks:java:io:kafka")
+  testCompile library.java.guava
+  testCompile library.java.junit
+  testCompile library.java.kafka
+  testCompile library.java.kafka_test
+  testCompile library.java.kafka_clients_test
+  testCompile library.java.kafka_streams_test
+  testCompile library.java.mockito_core
+  testCompile library.java.slf4j_simple
 }

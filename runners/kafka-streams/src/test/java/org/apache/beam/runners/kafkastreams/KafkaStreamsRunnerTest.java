@@ -85,7 +85,6 @@ public class KafkaStreamsRunnerTest {
     streamsConfiguration.put(StreamsConfig.STATE_DIR_CONFIG, TestUtils.tempDirectory().getPath());
     streamsConfiguration.put(StreamsConfig.COMMIT_INTERVAL_MS_CONFIG, "100");
     streamsConfiguration.put(StreamsConfig.CACHE_MAX_BYTES_BUFFERING_CONFIG, "0");
-    streamsConfiguration.put(IntegrationTestUtils.INTERNAL_LEAVE_GROUP_ON_CLOSE, "true");
 
     producerConfiguration = new Properties();
     producerConfiguration.put(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG, CLUSTER.bootstrapServers());
@@ -119,7 +118,7 @@ public class KafkaStreamsRunnerTest {
                 .withTopic(topicOne)
                 .withKeyDeserializer(StringDeserializer.class)
                 .withValueDeserializer(IntegerDeserializer.class)
-                .updateConsumerProperties(
+                .withConsumerConfigUpdates(
                     Collections.singletonMap(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest"))
                 .withoutMetadata())
         .apply(
@@ -129,7 +128,8 @@ public class KafkaStreamsRunnerTest {
                 .withTopic(topicTwo)
                 .withKeySerializer(StringSerializer.class)
                 .withValueSerializer(IntegerSerializer.class));
-    KafkaStreamsRunner.fromOptions(pipelineOptions).run(pipeline);
+    KafkaStreamsPipelineResult result =
+        KafkaStreamsRunner.fromOptions(pipelineOptions).run(pipeline);
 
     IntegrationTestUtils.produceKeyValuesSynchronously(
         topicOne, Arrays.asList(KeyValue.pair("KEY", 1)), producerConfiguration, Time.SYSTEM);
@@ -138,6 +138,7 @@ public class KafkaStreamsRunnerTest {
             consumerConfiguration, topicTwo, 1);
     Assert.assertEquals(1, keyValues.size());
     Assert.assertEquals(KeyValue.pair("KEY", 1), keyValues.get(0));
+    result.cancel();
   }
 
   @Test
@@ -156,7 +157,7 @@ public class KafkaStreamsRunnerTest {
                 .withTopic(topicOne)
                 .withKeyDeserializer(StringDeserializer.class)
                 .withValueDeserializer(IntegerDeserializer.class)
-                .updateConsumerProperties(
+                .withConsumerConfigUpdates(
                     Collections.singletonMap(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest"))
                 .withoutMetadata())
         .apply(
@@ -172,7 +173,8 @@ public class KafkaStreamsRunnerTest {
                 .withTopic(topicTwo)
                 .withKeySerializer(StringSerializer.class)
                 .withValueSerializer(IntegerSerializer.class));
-    KafkaStreamsRunner.fromOptions(pipelineOptions).run(pipeline);
+    KafkaStreamsPipelineResult result =
+        KafkaStreamsRunner.fromOptions(pipelineOptions).run(pipeline);
 
     IntegrationTestUtils.produceKeyValuesSynchronously(
         topicOne,
@@ -199,5 +201,6 @@ public class KafkaStreamsRunnerTest {
     Assert.assertEquals(2, keyValues.size());
     Assert.assertEquals(KeyValue.pair("KEY_ONE", 3), keyValues.get(0));
     Assert.assertEquals(KeyValue.pair("KEY_TWO", 5), keyValues.get(1));
+    result.cancel();
   }
 }

@@ -17,16 +17,12 @@
  */
 package org.apache.beam.runners.kafkastreams.state;
 
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.Collections;
 import org.apache.beam.runners.core.StateNamespaces;
 import org.apache.beam.runners.core.StateTags;
-import org.apache.beam.sdk.coders.BigEndianIntegerCoder;
 import org.apache.beam.sdk.coders.StringUtf8Coder;
-import org.apache.kafka.streams.processor.StateStore;
-import org.joda.time.Instant;
+import org.apache.beam.sdk.coders.VarIntCoder;
+import org.apache.beam.sdk.values.KV;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
@@ -34,6 +30,7 @@ import org.junit.Test;
 /** JUnit Test for {@link KStateInternals}. */
 public class KStateInternalsTest {
 
+  private static final String UNIQUE = "UNIQUE";
   private static final String KEY = "KEY";
   private static final String VALUE = "VALUE";
   private static final String BAG = "BAG";
@@ -43,21 +40,18 @@ public class KStateInternalsTest {
   private static final String COMBINING_WITH_CONTEXT = "COMBINING_WITH_CONTEXT";
   private static final String WATERMARK = "WATERMARK";
 
-  private Map<String, StateStore> stateStores;
+  private MockKeyValueStore<KV<String, String>, byte[]> store;
   private KStateInternals<String> stateInternals;
 
   @Before
   public void setUp() {
-    stateStores = new HashMap<>();
-    stateStores.put(VALUE, new MockKeyValueStore<String, Map<String, Integer>>());
-    stateStores.put(BAG, new MockKeyValueStore<String, Map<String, List<Integer>>>());
-    stateStores.put(SET, new MockKeyValueStore<String, Map<String, Set<Integer>>>());
-    stateStores.put(MAP, new MockKeyValueStore<String, Map<String, Map<String, Integer>>>());
-    stateStores.put(COMBINING, new MockKeyValueStore<String, Map<String, Integer>>());
-    stateStores.put(COMBINING_WITH_CONTEXT, new MockKeyValueStore<String, Map<String, Integer>>());
-    stateStores.put(WATERMARK, new MockKeyValueStore<String, Map<String, Instant>>());
+    store = new MockKeyValueStore<>();
     stateInternals =
-        KStateInternals.<String>of("", new MockProcessorContext(stateStores)).withKey(KEY);
+        KStateInternals.<String>of(
+                UNIQUE,
+                new MockProcessorContext(
+                    Collections.singletonMap(UNIQUE + KStateInternals.STATE, store)))
+            .withKey(KEY);
   }
 
   @Test
@@ -70,8 +64,7 @@ public class KStateInternalsTest {
     Assert.assertEquals(
         KValueState.class,
         stateInternals
-            .state(
-                StateNamespaces.global(), StateTags.value(VALUE, BigEndianIntegerCoder.of()), null)
+            .state(StateNamespaces.global(), StateTags.value(VALUE, VarIntCoder.of()), null)
             .getClass());
   }
 
@@ -80,7 +73,7 @@ public class KStateInternalsTest {
     Assert.assertEquals(
         KBagState.class,
         stateInternals
-            .state(StateNamespaces.global(), StateTags.bag(BAG, BigEndianIntegerCoder.of()), null)
+            .state(StateNamespaces.global(), StateTags.bag(BAG, VarIntCoder.of()), null)
             .getClass());
   }
 
@@ -89,7 +82,7 @@ public class KStateInternalsTest {
     Assert.assertEquals(
         KSetState.class,
         stateInternals
-            .state(StateNamespaces.global(), StateTags.set(SET, BigEndianIntegerCoder.of()), null)
+            .state(StateNamespaces.global(), StateTags.set(SET, VarIntCoder.of()), null)
             .getClass());
   }
 
@@ -100,7 +93,7 @@ public class KStateInternalsTest {
         stateInternals
             .state(
                 StateNamespaces.global(),
-                StateTags.map(MAP, StringUtf8Coder.of(), BigEndianIntegerCoder.of()),
+                StateTags.map(MAP, StringUtf8Coder.of(), VarIntCoder.of()),
                 null)
             .getClass());
   }
@@ -112,7 +105,7 @@ public class KStateInternalsTest {
         stateInternals
             .state(
                 StateNamespaces.global(),
-                StateTags.combiningValue(COMBINING, BigEndianIntegerCoder.of(), null),
+                StateTags.combiningValue(COMBINING, VarIntCoder.of(), null),
                 null)
             .getClass());
   }
@@ -124,8 +117,7 @@ public class KStateInternalsTest {
         stateInternals
             .state(
                 StateNamespaces.global(),
-                StateTags.combiningValueWithContext(
-                    COMBINING_WITH_CONTEXT, BigEndianIntegerCoder.of(), null),
+                StateTags.combiningValueWithContext(COMBINING_WITH_CONTEXT, VarIntCoder.of(), null),
                 null)
             .getClass());
   }

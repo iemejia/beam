@@ -22,6 +22,7 @@ import java.util.HashSet;
 import java.util.Set;
 import org.apache.beam.sdk.transforms.Flatten;
 import org.apache.beam.sdk.util.WindowedValue;
+import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.PValue;
 import org.apache.kafka.streams.kstream.KStream;
 
@@ -32,22 +33,24 @@ import org.apache.kafka.streams.kstream.KStream;
 public class FlattenTransformTranslator<T> implements TransformTranslator<Flatten.PCollections<T>> {
 
   @Override
+  @SuppressWarnings("unchecked")
   public void translate(PipelineTranslator pipelineTranslator, Flatten.PCollections<T> transform) {
     Collection<PValue> values = pipelineTranslator.getInputs(transform).values();
-    KStream<Object, WindowedValue<T>> flatten = null;
+    KStream<Void, WindowedValue<T>> flatten = null;
     Set<String> streamSources = new HashSet<>();
     for (PValue value : values) {
+      PCollection<T> input = (PCollection<T>) value;
       if (flatten == null) {
-        flatten = pipelineTranslator.getStream(value);
+        flatten = pipelineTranslator.getStream(input);
       } else {
-        flatten.merge(pipelineTranslator.getStream(value));
+        flatten.merge(pipelineTranslator.getStream(input));
       }
       streamSources.addAll(pipelineTranslator.getStreamSources(value));
     }
     if (flatten == null) {
       throw new IllegalArgumentException("empty flatten not supported");
     }
-    PValue output = pipelineTranslator.getOutput(transform);
+    PCollection<T> output = pipelineTranslator.getOutput(transform);
     pipelineTranslator.putStream(output, flatten);
     pipelineTranslator.putStreamSources(output, streamSources);
   }
