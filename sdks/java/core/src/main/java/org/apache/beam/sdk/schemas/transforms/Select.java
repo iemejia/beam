@@ -157,6 +157,11 @@ public class Select {
       return new Fields<>(fieldAccessDescriptor.withFieldNameAs(fieldName, fieldRename));
     }
 
+    /** Returns FieldAccessDescriptor */
+    public FieldAccessDescriptor getFieldAccessDescriptor() {
+      return fieldAccessDescriptor;
+    }
+
     @Override
     public PCollection<Row> expand(PCollection<T> input) {
       Schema inputSchema = input.getSchema();

@@ -26,6 +26,12 @@ import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
 import org.apache.beam.sdk.transforms.windowing.PaneInfo;
 import org.apache.beam.sdk.util.WindowedValue;
 import org.apache.beam.sdk.values.Row;
+import org.apache.spark.sql.Encoder;
+import org.apache.spark.sql.RowFactory;
+import org.apache.spark.sql.catalyst.InternalRow;
+import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder;
+import org.apache.spark.sql.catalyst.encoders.RowEncoder;
+import org.apache.spark.sql.catalyst.expressions.SpecificInternalRow;
 import org.apache.spark.sql.types.DataType;
 import org.apache.spark.sql.types.DataTypes;
 import org.apache.spark.sql.types.Metadata;
@@ -36,7 +42,7 @@ import org.joda.time.Instant;
 /** A set of utils to transform between Beam and Spark Schemas/Row representations. */
 @Experimental(Experimental.Kind.SCHEMAS)
 public class SchemaHelpers {
-  static DataType toSparkType(Schema.FieldType fieldType) {
+  public static DataType toSparkType(Schema.FieldType fieldType) {
     Schema.TypeName typeName = fieldType.getTypeName();
     switch (typeName) {
       case BOOLEAN:
@@ -84,7 +90,7 @@ public class SchemaHelpers {
     }
   }
 
-  static StructType toSparkSchema(Schema schema) {
+  public static StructType toSparkSchema(Schema schema) {
     List<StructField> fields = new ArrayList<>();
     for (Schema.Field field : schema.getFields()) {
       final Schema.FieldType fieldType = field.getType();
@@ -96,7 +102,50 @@ public class SchemaHelpers {
     return new StructType(fields.toArray(new StructField[0]));
   }
 
-  static <T> Row toRow(WindowedValue<T> wv) {
+  public static InternalRow toInternalRow(Row row) {
+    Schema schema = row.getSchema();
+    StructType sparkSchema = toSparkSchema(schema);
+    ExpressionEncoder<org.apache.spark.sql.Row> ee = RowEncoder.apply(sparkSchema);
+    Object[] values = null;
+    org.apache.spark.sql.Row row1 = RowFactory.create(values);
+
+    SpecificInternalRow sparkRow = new SpecificInternalRow(sparkSchema);
+    List<Schema.Field> fields = schema.getFields();
+    int i = 0;
+    for (Schema.Field field : fields) {
+      Schema.TypeName typeName = field.getType().getTypeName();
+      switch (typeName) {
+        case BOOLEAN:
+          sparkRow.setBoolean(i, row.getBoolean(i));
+          break;
+        case BYTE:
+          sparkRow.setByte(i, row.getByte(i));
+          break;
+        case INT16:
+          sparkRow.setShort(i, row.getInt16(i));
+          break;
+        case INT32:
+          sparkRow.setInt(i, row.getInt32(i));
+          break;
+        case INT64:
+          sparkRow.setLong(i, row.getInt64(i));
+          break;
+        case FLOAT:
+          sparkRow.setFloat(i, row.getFloat(i));
+          break;
+        case DOUBLE:
+          sparkRow.setDouble(i, row.getDouble(i));
+          break;
+        default:
+          // TODO Fill for missing types
+          i++;
+          break;
+      }
+    }
+    return sparkRow;
+  }
+
+  public static <T> Row toWindowedValueRow(WindowedValue<T> wv) {
     T value = wv.getValue();
     if (value instanceof Row) {
       // TODO can we get in with not exploding the values and just make a Row column?
@@ -129,40 +178,9 @@ public class SchemaHelpers {
     }
   }
 
-  public static void testToSparkSchema() {
-    Schema schema =
-        Schema.builder()
-            .addByteField("f_byte")
-            .addInt16Field("f_int16")
-            .addInt32Field("f_int32")
-            .addInt64Field("f_int64")
-            .addDecimalField("f_decimal")
-            .addFloatField("f_float")
-            .addDoubleField("f_double")
-            .addStringField("f_string")
-            .addDateTimeField("f_datetime")
-            .addBooleanField("f_boolean")
-            .addByteArrayField("f_bytearray")
-            .addArrayField("f_array", Schema.FieldType.STRING)
-            .addMapField("f_map", Schema.FieldType.STRING, Schema.FieldType.STRING)
-            .build();
-    StructType sparkSchema = toSparkSchema(schema);
-    System.out.println(sparkSchema);
-  }
-
-  public static void testToRow() {
-    Schema valueSchema =
-        Schema.builder().addInt32Field("c1").addStringField("c2").addDoubleField("c3").build();
-    Row row = Row.withSchema(valueSchema).addValues(1, "row", 1.0).build();
-    WindowedValue<Row> wv = WindowedValue.valueInGlobalWindow(row);
-    Row windowedValuerow = toRow(wv);
-    System.out.println(windowedValuerow);
+  public static <T> Encoder windowValueEncoder(WindowedValue<T> wv) {
+    return null;
   }
 
   // TODO Spark SQL based operations based on WindowedValueRow
-  public static void main(String[] args) {
-    testToRow();
-
-    SchemaCoder<WindowedValue<T>> x;
-  }
 }

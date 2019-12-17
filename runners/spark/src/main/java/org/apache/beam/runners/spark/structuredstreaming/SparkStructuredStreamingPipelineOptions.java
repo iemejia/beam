@@ -17,7 +17,10 @@
  */
 package org.apache.beam.runners.spark.structuredstreaming;
 
+import static org.apache.beam.sdk.annotations.Experimental.Kind.SCHEMAS;
+
 import org.apache.beam.runners.spark.SparkCommonPipelineOptions;
+import org.apache.beam.sdk.annotations.Experimental;
 import org.apache.beam.sdk.options.Default;
 import org.apache.beam.sdk.options.PipelineOptions;
 
@@ -32,4 +35,15 @@ public interface SparkStructuredStreamingPipelineOptions extends SparkCommonPipe
   boolean getTestMode();
 
   void setTestMode(boolean testMode);
+
+  /**
+   * If you use schema-based PCollections it will try to optimize its execution by translating
+   * directly into Spark catalyst optimizations. WARNING highly experimental.
+   */
+  @Experimental(SCHEMAS)
+  @Default.Boolean(false)
+  boolean isUseSchemaBasedOptimizations();
+
+  @Experimental(SCHEMAS)
+  void useSchemaBasedOptimizations(boolean testMode);
 }

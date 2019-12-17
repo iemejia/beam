@@ -66,6 +66,8 @@ dependencies {
   compile library.java.slf4j_api
   compile library.java.joda_time
   compile library.java.args4j
+  // TODO remove, Added just for PoC purposes
+  provided library.java.spark_avro
   provided library.java.spark_core
   provided library.java.spark_sql
   provided library.java.spark_streaming
@@ -88,6 +90,7 @@ dependencies {
   testCompile library.java.junit
   testCompile library.java.mockito_core
   testCompile library.java.jackson_dataformat_yaml
+  testCompile "org.apache.spark:spark-catalyst_2.11:2.4.4:tests"
   testCompile "org.apache.zookeeper:zookeeper:3.4.11"
   validatesRunner project(path: ":sdks:java:core", configuration: "shadowTest")
   validatesRunner project(path: ":runners:core-java", configuration: "testRuntime")

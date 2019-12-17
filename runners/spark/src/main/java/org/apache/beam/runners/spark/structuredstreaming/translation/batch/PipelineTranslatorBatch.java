@@ -24,9 +24,11 @@ import org.apache.beam.runners.spark.structuredstreaming.SparkStructuredStreamin
 import org.apache.beam.runners.spark.structuredstreaming.translation.PipelineTranslator;
 import org.apache.beam.runners.spark.structuredstreaming.translation.TransformTranslator;
 import org.apache.beam.runners.spark.structuredstreaming.translation.TranslationContext;
+import org.apache.beam.runners.spark.structuredstreaming.translation.batch.schema.SelectTranslatorBatch;
 import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.io.Read;
 import org.apache.beam.sdk.runners.TransformHierarchy;
+import org.apache.beam.sdk.schemas.transforms.Select;
 import org.apache.beam.sdk.transforms.Combine;
 import org.apache.beam.sdk.transforms.Flatten;
 import org.apache.beam.sdk.transforms.GroupByKey;
@@ -78,6 +80,9 @@ public class PipelineTranslatorBatch extends PipelineTranslator {
   }
 
   public PipelineTranslatorBatch(SparkStructuredStreamingPipelineOptions options) {
+    if (options.isUseSchemaBasedOptimizations()) {
+      TRANSFORM_TRANSLATORS.put(Select.Fields.class, new SelectTranslatorBatch());
+    }
     translationContext = new TranslationContext(options);
   }
 

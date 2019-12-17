@@ -163,6 +163,57 @@ public class JoinTest {
 
   @Test
   @Category(NeedsRunner.class)
+  public void testInnerJoinNoCondition() {
+    List<Row> pc1Rows =
+        Lists.newArrayList(
+            Row.withSchema(CG_SCHEMA_1).addValues("user1", 1, "us").build(),
+            Row.withSchema(CG_SCHEMA_1).addValues("user1", 2, "us").build(),
+            Row.withSchema(CG_SCHEMA_1).addValues("user1", 3, "il").build(),
+            Row.withSchema(CG_SCHEMA_1).addValues("user1", 4, "il").build(),
+            Row.withSchema(CG_SCHEMA_1).addValues("user2", 5, "fr").build(),
+            Row.withSchema(CG_SCHEMA_1).addValues("user2", 6, "fr").build(),
+            Row.withSchema(CG_SCHEMA_1).addValues("user2", 7, "ar").build(),
+            Row.withSchema(CG_SCHEMA_1).addValues("user2", 8, "ar").build(),
+            Row.withSchema(CG_SCHEMA_1).addValues("user3", 8, "ar").build());
+    List<Row> pc2Rows =
+        Lists.newArrayList(
+            Row.withSchema(CG_SCHEMA_1).addValues("user1", 9, "us").build(),
+            Row.withSchema(CG_SCHEMA_1).addValues("user1", 10, "us").build(),
+            Row.withSchema(CG_SCHEMA_1).addValues("user1", 11, "il").build(),
+            Row.withSchema(CG_SCHEMA_1).addValues("user1", 12, "il").build(),
+            Row.withSchema(CG_SCHEMA_1).addValues("user2", 13, "fr").build(),
+            Row.withSchema(CG_SCHEMA_1).addValues("user2", 14, "fr").build(),
+            Row.withSchema(CG_SCHEMA_1).addValues("user2", 15, "ar").build(),
+            Row.withSchema(CG_SCHEMA_1).addValues("user2", 16, "ar").build(),
+            Row.withSchema(CG_SCHEMA_1).addValues("user4", 8, "ar").build());
+
+    PCollection<Row> pc1 = pipeline.apply("Create1", Create.of(pc1Rows)).setRowSchema(CG_SCHEMA_1);
+    PCollection<Row> pc2 = pipeline.apply("Create2", Create.of(pc2Rows)).setRowSchema(CG_SCHEMA_1);
+
+    Schema expectedSchema =
+        Schema.builder()
+            .addRowField(Join.LHS_TAG, CG_SCHEMA_1)
+            .addRowField(Join.RHS_TAG, CG_SCHEMA_1)
+            .build();
+
+    PCollection<Row> joined = pc1.apply(Join.<Row, Row>innerJoin(pc2));
+
+    assertEquals(expectedSchema, joined.getSchema());
+
+    List<Row> expectedJoinedRows =
+        innerJoin(
+            pc1Rows,
+            pc2Rows,
+            new String[] {"user", "country"},
+            new String[] {"user", "country"},
+            expectedSchema);
+
+    PAssert.that(joined).containsInAnyOrder(expectedJoinedRows);
+    pipeline.run();
+  }
+
+  @Test
+  @Category(NeedsRunner.class)
   public void testOuterJoinDifferentKeys() {
     List<Row> pc1Rows =
         Lists.newArrayList(
