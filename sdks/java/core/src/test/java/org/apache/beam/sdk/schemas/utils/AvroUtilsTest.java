@@ -46,11 +46,14 @@ import org.apache.beam.sdk.io.AvroGeneratedUser;
 import org.apache.beam.sdk.schemas.Schema;
 import org.apache.beam.sdk.schemas.Schema.Field;
 import org.apache.beam.sdk.schemas.Schema.FieldType;
+import org.apache.beam.sdk.schemas.SchemaCoder;
 import org.apache.beam.sdk.schemas.utils.AvroGenerators.RecordSchemaGenerator;
 import org.apache.beam.sdk.schemas.utils.AvroUtils.TypeWithNullability;
+import org.apache.beam.sdk.testing.CoderProperties;
 import org.apache.beam.sdk.transforms.Create;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.Row;
+import org.apache.beam.sdk.values.TypeDescriptor;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableList;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableMap;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Lists;
@@ -531,8 +534,14 @@ public class AvroUtilsTest {
     PCollection<GenericRecord> records =
         pipeline.apply(Create.of(record).withCoder(AvroCoder.of(schema)));
     assertFalse(records.hasSchema());
-    records.setCoder(AvroUtils.schemaCoder(schema));
+//    final SchemaCoder<GenericRecord> avroSchemaCoder = AvroUtils.schemaCoder(schema);
+//    SchemaCoder<GenericRecord> avroSchemaCoder = AvroUtils.schemaCoder(GenericRecord.class, schema);
+    SchemaCoder<GenericRecord> avroSchemaCoder = AvroUtils.schemaCoder(TypeDescriptor.of(GenericRecord.class));
+    records.setCoder(avroSchemaCoder);
     assertTrue(records.hasSchema());
+
+    CoderProperties.coderSerializable(avroSchemaCoder);
+//    SerializableUtils.ensureSerializableRoundTrip(avroSchemaCoder);
 
     AvroGeneratedUser user = new AvroGeneratedUser("foo", 42, "green");
     PCollection<AvroGeneratedUser> users =

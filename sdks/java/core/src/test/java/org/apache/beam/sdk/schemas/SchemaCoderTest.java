@@ -273,7 +273,15 @@ public class SchemaCoderTest {
                     "foo", 9001, 0L, new DateTime().withDate(1979, 3, 14).withTime(10, 30, 0, 0)),
                 new SimpleAvro(
                     "bar", 9002, 1L, new DateTime().withDate(1989, 3, 14).withTime(10, 30, 0, 0)))
-          });
+          }
+//          ,
+//      new Object[] {
+//              SchemaCoder.of(coder.getSchema(), ),
+//              ImmutableList.of(
+//                      Row.withSchema(INT32_SCHEMA).addValues(9001, 9002).build(),
+//                      Row.withSchema(INT32_SCHEMA).addValues(3, 4).build())
+//      },
+          );
     }
 
     @Test

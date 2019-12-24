@@ -22,6 +22,7 @@ import static org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Prec
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.Arrays;
 import java.util.Objects;
 import java.util.UUID;
 import javax.annotation.Nullable;
@@ -247,8 +248,12 @@ public class SchemaCoder<T> extends CustomCoder<T> {
     SchemaCoder<?> that = (SchemaCoder<?>) o;
     return schema.equals(that.schema)
         && typeDescriptor.equals(that.typeDescriptor)
-        && toRowFunction.equals(that.toRowFunction)
-        && fromRowFunction.equals(that.fromRowFunction);
+        && Arrays.equals(
+            SerializableUtils.serializeToByteArray(this.toRowFunction),
+            SerializableUtils.serializeToByteArray(that.toRowFunction))
+        && Arrays.equals(
+            SerializableUtils.serializeToByteArray(this.fromRowFunction),
+            SerializableUtils.serializeToByteArray(that.fromRowFunction));
   }
 
   @Override
