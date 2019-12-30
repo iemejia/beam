@@ -21,7 +21,10 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import java.io.IOException;
 import java.io.Serializable;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
+import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Splitter;
 import org.joda.time.Duration;
 
 /**
@@ -205,14 +208,7 @@ public class NexmarkConfiguration implements Serializable {
       debug = options.getDebug();
     }
     if (options.getQuery() != null) {
-      try {
-        query = NexmarkQueryName.valueOf(options.getQuery());
-      } catch (IllegalArgumentException exc) {
-        query = NexmarkQueryName.fromNumber(Integer.parseInt(options.getQuery()));
-      }
-      if (query == null) {
-        throw new IllegalArgumentException("Unknown query: " + query);
-      }
+      query = NexmarkQueryName.fromId(options.getQuery());
     }
     if (options.getSourceType() != null) {
       sourceType = options.getSourceType();
