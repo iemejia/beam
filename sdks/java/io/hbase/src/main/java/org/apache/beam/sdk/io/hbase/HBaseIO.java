@@ -117,16 +117,16 @@ import org.slf4j.LoggerFactory;
  * }</pre>
  *
  * <p>{@link HBaseIO#readAll()} allows to execute multiple {@link Scan}s to multiple {@link Table}s.
- * These queries are encapsulated via an initial {@link PCollection} of {@link HBaseQuery}s and can
- * be used to create advanced compositional patterns like reading from a Source and then based on
- * the data create new HBase scans.
+ * These queries are encapsulated via an initial {@link PCollection} of {@link Read}s and can be
+ * used to create advanced compositional patterns like reading from a Source and then based on the
+ * data create new HBase scans.
  *
  * <p><b>Note:</b> {@link HBaseIO.ReadAll} only works with <a
  * href="https://beam.apache.org/documentation/runners/capability-matrix/">runners that support
  * Splittable DoFn</a>.
  *
  * <pre>{@code
- * PCollection<HBaseQuery> queries = ...;
+ * PCollection<Read> queries = ...;
  * queries.apply("readAll", HBaseIO.readAll().withConfiguration(configuration));
  * }</pre>
  *
@@ -334,32 +334,20 @@ public class HBaseIO {
 
   /**
    * A {@link PTransform} that works like {@link #read}, but executes read operations coming from a
-   * {@link PCollection} of {@link HBaseQuery}.
+   * {@link PCollection} of {@link Read}.
    */
   public static ReadAll readAll() {
-    return new ReadAll(null);
+    return new ReadAll();
   }
 
   /** Implementation of {@link #readAll}. */
-  public static class ReadAll extends PTransform<PCollection<HBaseQuery>, PCollection<Result>> {
-
-    private ReadAll(SerializableConfiguration serializableConfiguration) {
-      this.serializableConfiguration = serializableConfiguration;
-    }
-
-    /** Reads from the HBase instance indicated by the* given configuration. */
-    public ReadAll withConfiguration(Configuration configuration) {
-      checkArgument(configuration != null, "configuration can not be null");
-      return new ReadAll(new SerializableConfiguration(configuration));
-    }
+  public static class ReadAll extends PTransform<PCollection<Read>, PCollection<Result>> {
+    private ReadAll() {}
 
     @Override
-    public PCollection<Result> expand(PCollection<HBaseQuery> input) {
-      checkArgument(serializableConfiguration != null, "withConfiguration() is required");
-      return input.apply(ParDo.of(new HBaseReadSplittableDoFn(serializableConfiguration)));
+    public PCollection<Result> expand(PCollection<Read> input) {
+      return input.apply(ParDo.of(new HBaseReadSplittableDoFn()));
     }
-
-    private SerializableConfiguration serializableConfiguration;
   }
 
   static class HBaseSource extends BoundedSource<Result> {
