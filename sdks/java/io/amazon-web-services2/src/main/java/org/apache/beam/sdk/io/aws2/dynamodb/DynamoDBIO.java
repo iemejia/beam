@@ -52,6 +52,8 @@ import org.apache.beam.sdk.util.Sleeper;
 import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PBegin;
 import org.apache.beam.sdk.values.PCollection;
+import org.apache.beam.sdk.values.PInput;
+import org.apache.beam.sdk.values.POutput;
 import org.apache.beam.sdk.values.TypeDescriptor;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.annotations.VisibleForTesting;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.ImmutableSet;
@@ -237,6 +239,19 @@ public final class DynamoDBIO {
                   .apply("Read", ParDo.of(new ReadFn()));
       output.setCoder(getCoder());
       return output;
+    }
+
+    public static class ReadAll extends PTransform<PCollection<Read<T>>, PCollection<T>> {
+
+      @Override
+      public PCollection<T> expand(PCollection<Read<T>> spec) {
+        PCollection<T> output =
+            (PCollection<T>)
+                spec.apply("Reshuffle", Reshuffle.viaRandomKey())
+                    .apply("Read", ParDo.of(new ReadFn()));
+        output.setCoder((Coder<T>) spec.getCoder());
+        return output;
+      }
     }
 
     /** A {@link DoFn} to split {@link Read} elements by segment id. */
