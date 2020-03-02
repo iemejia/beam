@@ -50,7 +50,7 @@ dependencies {
   testCompile library.java.hadoop_minicluster
   testCompile library.java.hadoop_hdfs
   testCompile library.java.hadoop_common
-  testCompile "org.apache.hbase:hbase-shaded-server:$hbase_version"
+  testCompile "org.apache.hbase:hbase-server:$hbase_version"
   testCompile("org.apache.hbase:hbase-server:$hbase_version:tests") {
     // We prevent bringing in unshaded dependencies to not conflict
     // with hbase-shaded-server and hbase-shaded-client
