@@ -34,7 +34,7 @@ test {
   jvmArgs "-Dtest.build.data.basedirectory=build/test-data"
 }
 
-def hbase_version = "1.2.6"
+def hbase_version = "1.4.13"
 
 dependencies {
   compile library.java.vendored_guava_26_0_jre
