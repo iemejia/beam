@@ -55,7 +55,8 @@ func Materialize(ctx context.Context, endpoint string, dependencies []*pipepb.Ar
 	} else if rt == "" || rt == NoArtifactsStaged {
 		return []*jobpb.ArtifactMetadata{}, nil
 	} else {
-		return legacyMaterialize(ctx, endpoint, rt, dest)
+		// BEAM-10762 Beam Python on Flink fails when no artifacts staged - workaround
+		return newMaterialize(ctx, endpoint, dependencies, dest)
 	}
 }
 
