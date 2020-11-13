@@ -33,6 +33,10 @@ import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Joiner;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+@SuppressWarnings({
+  "rawtypes", // TODO(https://issues.apache.org/jira/browse/BEAM-10556)
+  "nullness" // TODO(https://issues.apache.org/jira/browse/BEAM-10402)
+})
 class ReadFn<T> extends DoFn<Read<T>, T> {
 
   private static final Logger LOG = LoggerFactory.getLogger(ReadFn.class);
@@ -50,7 +54,7 @@ class ReadFn<T> extends DoFn<Read<T>, T> {
     String query = generateRangeQuery(read, partitionKey, read.ringRanges() != null);
     PreparedStatement preparedStatement = session.prepare(query);
     Set<RingRange> ringRanges =
-        read.ringRanges() == null ? Collections.<RingRange>emptySet() : read.ringRanges().get();
+        read.ringRanges() == null ? Collections.emptySet() : read.ringRanges().get();
 
     for (RingRange rr : ringRanges) {
       Token startToken = session.getCluster().getMetadata().newToken(rr.getStart().toString());
