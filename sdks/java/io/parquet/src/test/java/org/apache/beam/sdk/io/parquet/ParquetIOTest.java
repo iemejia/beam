@@ -18,6 +18,7 @@
 package org.apache.beam.sdk.io.parquet;
 
 import static java.util.stream.Collectors.toList;
+import static org.apache.beam.sdk.io.parquet.ParquetIO.filterSchemaFields;
 import static org.apache.beam.sdk.transforms.display.DisplayDataMatchers.hasDisplayItem;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.Assert.assertEquals;
@@ -30,6 +31,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericData;
@@ -78,31 +80,8 @@ public class ParquetIOTest implements Serializable {
           + "    {\"name\":\"id\",\"type\":\"string\"}"
           + "  ]"
           + "}";
-
   private static final Schema SCHEMA = new Schema.Parser().parse(SCHEMA_STRING);
 
-  private static final String REQUESTED_SCHEMA_STRING =
-      "{"
-          + "\"type\":\"record\", "
-          + "\"name\":\"testrecord\","
-          + "\"fields\":["
-          + "    {\"name\":\"id\",\"type\":\"string\"}"
-          + "  ]"
-          + "}";
-
-  private static final String REQUESTED_SCHEMA_ENCODER_STRING =
-      "{"
-          + "\"type\":\"record\", "
-          + "\"name\":\"testrecord\","
-          + "\"fields\":["
-          + "    {\"name\":\"name\",\"type\":[\"string\",\"null\"]},"
-          + "    {\"name\":\"id\",\"type\":\"string\"}"
-          + "  ]"
-          + "}";
-
-  private static final Schema REQUESTED_ENCODER_SCHEMA =
-      new Schema.Parser().parse(REQUESTED_SCHEMA_ENCODER_STRING);
-  private static final Schema REQUESTED_SCHEMA = new Schema.Parser().parse(REQUESTED_SCHEMA_STRING);
   private static final String[] SCIENTISTS =
       new String[] {
         "Einstein", "Darwin", "Copernicus", "Pasteur", "Curie",
@@ -126,7 +105,7 @@ public class ParquetIOTest implements Serializable {
         readPipeline.apply(
             ParquetIO.read(SCHEMA)
                 .from(temporaryFolder.getRoot().getAbsolutePath() + "/*")
-                .withProjection(REQUESTED_SCHEMA, REQUESTED_ENCODER_SCHEMA));
+                .withProjection(Arrays.asList("id")));
     PAssert.that(readBack).containsInAnyOrder(requestRecords);
     readPipeline.run().waitUntilFinish();
   }
@@ -323,11 +302,12 @@ public class ParquetIOTest implements Serializable {
   }
 
   private List<GenericRecord> generateRequestedRecords(long count) {
+    Schema filteredSchema = filterSchemaFields(SCHEMA, Arrays.asList("id"));
     ArrayList<GenericRecord> data = new ArrayList<>();
-    GenericRecordBuilder builder = new GenericRecordBuilder(REQUESTED_ENCODER_SCHEMA);
+    GenericRecordBuilder builder = new GenericRecordBuilder(filteredSchema);
     for (int i = 0; i < count; i++) {
       int index = i % SCIENTISTS.length;
-      GenericRecord record = builder.set("id", Integer.toString(i)).set("name", null).build();
+      GenericRecord record = builder.set("id", Integer.toString(i)).build();
       data.add(record);
     }
     return data;
