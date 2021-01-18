@@ -69,6 +69,13 @@ test {
   }
 }
 
+// Avoid paranamer 2.7 from leaking into the user classpath. Paranamer is an
+// Avro transitive dependency that can produce runtime conflicts between
+// versions of Spark/Avro
+configurations.shadow {
+  exclude group: "com.thoughtworks.paranamer", module: "paranamer"
+}
+
 dependencies {
   antlr library.java.antlr
   // Required to load constants from the model, e.g. max timestamp for global window
