@@ -63,6 +63,7 @@ DOCKER_IMAGE_DEFAULT_REPO_PREFIX=beam_
 JAVA_VER=("java8" "java11")
 PYTHON_VER=("python3.6" "python3.7" "python3.8")
 FLINK_VER=("1.8" "1.9" "1.10")
+SPARK_VER=("2" "3")
 
 echo "================Setting Up Environment Variables==========="
 echo "Which release version are you working on: "
@@ -287,7 +288,9 @@ if [[ $confirmation = "y" ]]; then
   done
 
   echo '-------------Generating and Pushing Spark job server image-------------'
-  ./gradlew ":runners:spark:job-server:container:dockerPush" -Pdocker-tag="${RELEASE}_rc${RC_NUM}"
+  for ver in "${SPARK_VER[@]}"; do
+    ./gradlew ":runners:spark:${ver}:job-server:container:dockerPush" -Pdocker-tag="${RELEASE}_rc${RC_NUM}"
+  done
 
   rm -rf ~/${PYTHON_ARTIFACTS_DIR}
 
@@ -299,7 +302,9 @@ if [[ $confirmation = "y" ]]; then
   for ver in "${FLINK_VER[@]}"; do
     docker rmi -f "${DOCKER_IMAGE_DEFAULT_REPO_ROOT}/${DOCKER_IMAGE_DEFAULT_REPO_PREFIX}flink${ver}_job_server:${RELEASE}_rc${RC_NUM}"
   done
-  docker rmi -f "${DOCKER_IMAGE_DEFAULT_REPO_ROOT}/${DOCKER_IMAGE_DEFAULT_REPO_PREFIX}spark_job_server:${RELEASE}_rc${RC_NUM}"
+  for ver in "${FLINK_VER[@]}"; do
+    docker rmi -f "${DOCKER_IMAGE_DEFAULT_REPO_ROOT}/${DOCKER_IMAGE_DEFAULT_REPO_PREFIX}spark${ver}_job_server:${RELEASE}_rc${RC_NUM}"
+  done
 fi
 
 echo "[Current Step]: Update beam-site"

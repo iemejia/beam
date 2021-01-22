@@ -30,6 +30,8 @@ DOCKER_IMAGE_DEFAULT_REPO_PREFIX=beam_
 JAVA_VER=("java8" "java11")
 PYTHON_VER=("python3.6" "python3.7" "python3.8")
 FLINK_VER=("1.8" "1.9" "1.10")
+# We use no specific Spark version here for backwards compatibility, this should be replaced by 'spark2' in the future.
+SPARK_VER=("2" "3")
 
 echo "Publish SDK docker images to Docker Hub."
 
@@ -109,22 +111,24 @@ if [[ $confirmation = "y" ]]; then
     docker rmi -f "${FLINK_IMAGE_NAME}:latest"
   done
 
-  echo '-------------Tagging and Pushing Spark job server image-------------'
-  SPARK_IMAGE_NAME=${DOCKER_IMAGE_DEFAULT_REPO_ROOT}/${DOCKER_IMAGE_DEFAULT_REPO_PREFIX}spark_job_server
+  echo '-------------Tagging and Pushing Spark job server images-------------'
+  for ver in "${SPARK_VER[@]}"; do
+    SPARK_IMAGE_NAME=${DOCKER_IMAGE_DEFAULT_REPO_ROOT}/${DOCKER_IMAGE_DEFAULT_REPO_PREFIX}spark${ver}_job_server
 
-  # Pull verified RC from dockerhub.
-  docker pull "${SPARK_IMAGE_NAME}:${RELEASE}_${RC_VERSION}"
+    # Pull verified RC from dockerhub.
+    docker pull "${SPARK_IMAGE_NAME}:${RELEASE}_${RC_VERSION}"
 
-  # Tag with ${RELEASE} and push to dockerhub.
-  docker tag "${SPARK_IMAGE_NAME}:${RELEASE}_${RC_VERSION}" "${SPARK_IMAGE_NAME}:${RELEASE}"
-  docker push "${SPARK_IMAGE_NAME}:${RELEASE}"
+    # Tag with ${RELEASE} and push to dockerhub.
+    docker tag "${SPARK_IMAGE_NAME}:${RELEASE}_${RC_VERSION}" "${SPARK_IMAGE_NAME}:${RELEASE}"
+    docker push "${SPARK_IMAGE_NAME}:${RELEASE}"
 
-  # Tag with latest and push to dockerhub.
-  docker tag "${SPARK_IMAGE_NAME}:${RELEASE}_${RC_VERSION}" "${SPARK_IMAGE_NAME}:latest"
-  docker push "${SPARK_IMAGE_NAME}:latest"
+    # Tag with latest and push to dockerhub.
+    docker tag "${SPARK_IMAGE_NAME}:${RELEASE}_${RC_VERSION}" "${SPARK_IMAGE_NAME}:latest"
+    docker push "${SPARK_IMAGE_NAME}:latest"
 
-  # Cleanup images from local
-  docker rmi -f "${SPARK_IMAGE_NAME}:${RELEASE}_${RC_VERSION}"
-  docker rmi -f "${SPARK_IMAGE_NAME}:${RELEASE}"
-  docker rmi -f "${SPARK_IMAGE_NAME}:latest"
+    # Cleanup images from local
+    docker rmi -f "${SPARK_IMAGE_NAME}:${RELEASE}_${RC_VERSION}"
+    docker rmi -f "${SPARK_IMAGE_NAME}:${RELEASE}"
+    docker rmi -f "${SPARK_IMAGE_NAME}:latest"
+  done
 fi
