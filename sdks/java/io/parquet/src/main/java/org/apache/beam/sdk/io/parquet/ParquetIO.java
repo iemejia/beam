@@ -20,6 +20,7 @@ package org.apache.beam.sdk.io.parquet;
 import static java.lang.String.format;
 import static org.apache.parquet.Preconditions.checkArgument;
 import static org.apache.parquet.Preconditions.checkNotNull;
+import static org.apache.parquet.avro.AvroReadSupport.AVRO_REQUESTED_PROJECTION;
 import static org.apache.parquet.hadoop.ParquetFileWriter.Mode.OVERWRITE;
 
 import com.google.auto.value.AutoValue;
@@ -33,6 +34,7 @@ import java.util.List;
 import java.util.Map;
 import javax.annotation.Nullable;
 import org.apache.avro.Schema;
+import org.apache.avro.Schema.Field;
 import org.apache.avro.generic.GenericData;
 import org.apache.avro.generic.GenericRecord;
 import org.apache.avro.specific.SpecificData;
@@ -316,8 +318,6 @@ public class ParquetIO {
 
     abstract @Nullable Schema getProjectionSchema();
 
-    abstract @Nullable Schema getEncoderSchema();
-
     abstract @Nullable GenericData getAvroDataModel();
 
     abstract @Nullable SerializableConfiguration getConfiguration();
@@ -339,8 +339,6 @@ public class ParquetIO {
 
       abstract Builder setSchema(Schema schema);
 
-      abstract Builder setEncoderSchema(Schema schema);
-
       abstract Builder setProjectionSchema(Schema schema);
 
       abstract Builder setAvroDataModel(GenericData model);
@@ -359,13 +357,24 @@ public class ParquetIO {
     public Read from(String filepattern) {
       return from(ValueProvider.StaticValueProvider.of(filepattern));
     }
-    /** Enable the reading with projection. */
+
+    /**
+     * Enable the reading with projection.
+     *
+     * @deprecated Use {@link #withProjection(List)}. This method will be removed soon.
+     */
+    @Deprecated
     public Read withProjection(Schema projectionSchema, Schema encoderSchema) {
-      return toBuilder()
-          .setProjectionSchema(projectionSchema)
-          .setSplittable(true)
-          .setEncoderSchema(encoderSchema)
-          .build();
+      return withProjection(projectionSchema);
+    }
+
+    /** Enable the reading with projection. */
+    public Read withProjection(List<String> fieldNames) {
+      return withProjection(filterSchemaFields(this.getSchema(), fieldNames));
+    }
+
+    private Read withProjection(Schema projectionSchema) {
+      return toBuilder().setProjectionSchema(projectionSchema).setSplittable(true).build();
     }
 
     /** Specify Hadoop configuration for ParquetReader. */
@@ -405,7 +414,7 @@ public class ParquetIO {
                 .withSplit()
                 .withBeamSchemas(getInferBeamSchema())
                 .withAvroDataModel(getAvroDataModel())
-                .withProjection(getProjectionSchema(), getEncoderSchema()));
+                .withProjection(getProjectionSchema()));
       }
       return inputFiles.apply(
           readFiles(getSchema())
@@ -567,8 +576,6 @@ public class ParquetIO {
 
     abstract @Nullable GenericData getAvroDataModel();
 
-    abstract @Nullable Schema getEncoderSchema();
-
     abstract @Nullable Schema getProjectionSchema();
 
     abstract @Nullable SerializableConfiguration getConfiguration();
@@ -584,8 +591,6 @@ public class ParquetIO {
       abstract Builder setSchema(Schema schema);
 
       abstract Builder setAvroDataModel(GenericData model);
-
-      abstract Builder setEncoderSchema(Schema schema);
 
       abstract Builder setProjectionSchema(Schema schema);
 
@@ -605,12 +610,23 @@ public class ParquetIO {
       return toBuilder().setAvroDataModel(model).build();
     }
 
+    /**
+     * Enable the reading with projection.
+     *
+     * @deprecated Use {@link #withProjection(List)}. This method will be removed soon.
+     */
+    @Deprecated
     public ReadFiles withProjection(Schema projectionSchema, Schema encoderSchema) {
-      return toBuilder()
-          .setProjectionSchema(projectionSchema)
-          .setEncoderSchema(encoderSchema)
-          .setSplittable(true)
-          .build();
+      return withProjection(projectionSchema);
+    }
+
+    /** Enable the reading with projection. */
+    public ReadFiles withProjection(List<String> fieldNames) {
+      return withProjection(filterSchemaFields(this.getSchema(), fieldNames));
+    }
+
+    private ReadFiles withProjection(Schema projectionSchema) {
+      return toBuilder().setProjectionSchema(projectionSchema).setSplittable(true).build();
     }
 
     /** Specify Hadoop configuration for ParquetReader. */
@@ -631,7 +647,9 @@ public class ParquetIO {
     @Override
     public PCollection<GenericRecord> expand(PCollection<ReadableFile> input) {
       checkNotNull(getSchema(), "Schema can not be null");
-      return input.apply(ParDo.of(getReaderFn())).setCoder(getCollectionCoder());
+      Schema schema = (getProjectionSchema() != null) ? getProjectionSchema() : getSchema();
+      Coder coder = getInferBeamSchema() ? AvroUtils.schemaCoder(schema) : AvroCoder.of(schema);
+      return input.apply(ParDo.of(getReaderFn())).setCoder(coder);
     }
 
     /** Returns Parquet file reading function based on {@link #isSplittable()}. */
@@ -644,18 +662,6 @@ public class ParquetIO {
               getConfiguration())
           : new ReadFn<>(
               getAvroDataModel(), GenericRecordPassthroughFn.create(), getConfiguration());
-    }
-
-    /**
-     * Returns {@link org.apache.beam.sdk.schemas.SchemaCoder} when using Beam schemas, {@link
-     * AvroCoder} when not using Beam schema.
-     */
-    @Experimental(Kind.SCHEMAS)
-    private Coder<GenericRecord> getCollectionCoder() {
-      Schema coderSchema =
-          getProjectionSchema() != null && isSplittable() ? getEncoderSchema() : getSchema();
-
-      return getInferBeamSchema() ? AvroUtils.schemaCoder(coderSchema) : AvroCoder.of(coderSchema);
     }
 
     @DoFn.BoundedPerElement
@@ -705,8 +711,7 @@ public class ParquetIO {
         }
         AvroReadSupport<GenericRecord> readSupport = new AvroReadSupport<>(model);
         if (requestSchemaString != null) {
-          AvroReadSupport.setRequestedProjection(
-              conf, new Schema.Parser().parse(requestSchemaString));
+          conf.set(AVRO_REQUESTED_PROJECTION, requestSchemaString);
         }
         ParquetReadOptions options = HadoopReadOptions.builder(conf).build();
         ParquetFileReader reader =
@@ -1166,6 +1171,29 @@ public class ParquetIO {
 
     /** Enforce singleton pattern, by disallowing construction with {@code new} operator. */
     private GenericRecordPassthroughFn() {}
+  }
+
+  /** Returns a copy of the {@link Schema} without the fieldNames fields. */
+  @VisibleForTesting
+  static Schema filterSchemaFields(Schema schema, List<String> fieldNames) {
+    List<Field> selectedFields = new ArrayList<>();
+    for (String fieldName : fieldNames) {
+      final Field field = schema.getField(fieldName);
+      Schema.Field newField =
+          new Schema.Field(
+              field.name(), field.schema(), field.doc(), field.defaultVal(), field.order());
+      for (Map.Entry<String, Object> kv : field.getObjectProps().entrySet()) {
+        newField.addProp(kv.getKey(), kv.getValue());
+      }
+      if (field.aliases() != null) {
+        for (String alias : field.aliases()) {
+          newField.addAlias(alias);
+        }
+      }
+      selectedFields.add(newField);
+    }
+    return Schema.createRecord(
+        schema.getName(), schema.getDoc(), schema.getNamespace(), schema.isError(), selectedFields);
   }
 
   /** Disallow construction of utility class. */
