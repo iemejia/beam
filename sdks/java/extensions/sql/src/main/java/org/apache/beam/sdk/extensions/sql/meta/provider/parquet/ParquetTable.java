@@ -19,14 +19,17 @@ package org.apache.beam.sdk.extensions.sql.meta.provider.parquet;
 
 import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 import org.apache.avro.Schema;
 import org.apache.avro.Schema.Field;
 import org.apache.avro.generic.GenericRecord;
 import org.apache.beam.sdk.annotations.Internal;
 import org.apache.beam.sdk.extensions.sql.impl.BeamTableStatistics;
 import org.apache.beam.sdk.extensions.sql.meta.BeamSqlTableFilter;
+import org.apache.beam.sdk.extensions.sql.meta.DefaultTableFilter;
 import org.apache.beam.sdk.extensions.sql.meta.ProjectSupport;
 import org.apache.beam.sdk.extensions.sql.meta.SchemaBaseBeamTable;
 import org.apache.beam.sdk.extensions.sql.meta.Table;
@@ -41,6 +44,10 @@ import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.PCollection.IsBounded;
 import org.apache.beam.sdk.values.POutput;
 import org.apache.beam.sdk.values.Row;
+import org.apache.beam.vendor.calcite.v1_20_0.org.apache.calcite.rex.RexNode;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.parquet.filter2.predicate.FilterPredicate;
+import org.apache.parquet.hadoop.ParquetInputFormat;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -72,6 +79,21 @@ class ParquetTable extends SchemaBaseBeamTable implements Serializable {
       Schema projectionSchema = projectSchema(schema, fieldNames);
       LOG.info("Projecting fields schema : " + projectionSchema.toString());
       read = read.withProjection(projectionSchema, projectionSchema);
+    }
+    if (!(filters instanceof DefaultTableFilter)) {
+      ParquetTableFilter parquetTableFilter = (ParquetTableFilter) filters;
+      if (!parquetTableFilter.getSupported().isEmpty()) {
+        FilterPredicate filterPredicate =
+            parquetTableFilter.buildPredicate(parquetTableFilter.getSupported());
+        Configuration configuration = new Configuration();
+        ParquetInputFormat.setFilterPredicate(configuration, filterPredicate);
+        Map<String, String> configAsMap = new HashMap<>();
+        for (Entry<String, String> entry : configuration) {
+          configAsMap.put(entry.getKey(), entry.getValue());
+        }
+        LOG.info("Pushing down the following filter: " + filterPredicate.toString());
+        read = read.withConfiguration(configAsMap);
+      }
     }
     return begin.apply("ParquetIORead", read).apply("ToRows", Convert.toRows());
   }
@@ -128,5 +150,10 @@ class ParquetTable extends SchemaBaseBeamTable implements Serializable {
   @Override
   public ProjectSupport supportsProjects() {
     return ProjectSupport.WITH_FIELD_REORDERING;
+  }
+
+  @Override
+  public BeamSqlTableFilter constructFilter(List<RexNode> filter) {
+    return new ParquetTableFilter(filter, schema);
   }
 }
