@@ -316,8 +316,6 @@ public class ParquetIO {
 
     abstract @Nullable Schema getProjectionSchema();
 
-    abstract @Nullable Schema getEncoderSchema();
-
     abstract @Nullable GenericData getAvroDataModel();
 
     abstract @Nullable SerializableConfiguration getConfiguration();
@@ -339,8 +337,6 @@ public class ParquetIO {
 
       abstract Builder setSchema(Schema schema);
 
-      abstract Builder setEncoderSchema(Schema schema);
-
       abstract Builder setProjectionSchema(Schema schema);
 
       abstract Builder setAvroDataModel(GenericData model);
@@ -359,13 +355,27 @@ public class ParquetIO {
     public Read from(String filepattern) {
       return from(ValueProvider.StaticValueProvider.of(filepattern));
     }
-    /** Enable the reading with projection. */
+
+    /**
+     * Enable the reading with projection.
+     *
+     * @deprecated This method will be removed in the 2.31.0 Beam release. The same functionality can be achieved by
+     * using the official Parquet API: Passing a schema to project the fields as part of Hadoop s Configuration:
+     *
+     * <pre>{@code
+     * Configuration configuration = ...
+     * AvroReadSupport.setAvroReadSchema(configuration, encoderSchema);
+     * AvroReadSupport.setRequestedProjection(configuration, projectionSchema);
+     * PCollection<GenericRecord> records =
+     *     readPipeline.apply(ParquetIO.read(SCHEMA).from(path).withConfiguration(configuration);
+     * </pre>
+     */
+    @Deprecated
     public Read withProjection(Schema projectionSchema, Schema encoderSchema) {
-      return toBuilder()
-          .setProjectionSchema(projectionSchema)
-          .setSplittable(true)
-          .setEncoderSchema(encoderSchema)
-          .build();
+      Configuration configuration = SerializableConfiguration.newConfiguration(getConfiguration());
+      AvroReadSupport.setAvroReadSchema(configuration, encoderSchema);
+      AvroReadSupport.setRequestedProjection(configuration, projectionSchema);
+      return withConfiguration(configuration).withSplit();
     }
 
     /** Specify Hadoop configuration for ParquetReader. */
@@ -411,8 +421,10 @@ public class ParquetIO {
           readFiles(getSchema())
               .withBeamSchemas(getInferBeamSchema())
               .withAvroDataModel(getAvroDataModel());
+      // TODO Ismael fix
       if (isSplittable()) {
-        readFiles = readFiles.withSplit().withProjection(getProjectionSchema(), getEncoderSchema());
+        readFiles =
+            readFiles.withSplit().withProjection(getProjectionSchema(), getProjectionSchema());
       }
       if (getConfiguration() != null) {
         readFiles = readFiles.withConfiguration(getConfiguration().get());
@@ -613,8 +625,6 @@ public class ParquetIO {
 
     abstract @Nullable GenericData getAvroDataModel();
 
-    abstract @Nullable Schema getEncoderSchema();
-
     abstract @Nullable Schema getProjectionSchema();
 
     abstract @Nullable SerializableConfiguration getConfiguration();
@@ -630,8 +640,6 @@ public class ParquetIO {
       abstract Builder setSchema(Schema schema);
 
       abstract Builder setAvroDataModel(GenericData model);
-
-      abstract Builder setEncoderSchema(Schema schema);
 
       abstract Builder setProjectionSchema(Schema schema);
 
@@ -651,12 +659,26 @@ public class ParquetIO {
       return toBuilder().setAvroDataModel(model).build();
     }
 
+    /**
+     * Enable the reading with projection.
+     *
+     * @deprecated This method will be removed in the 2.31.0 Beam release. The same functionality can be achieved by
+     * using the official Parquet API: Passing a schema to project the fields as part of Hadoop s Configuration:
+     *
+     * <pre>{@code
+     * Configuration configuration = ...
+     * AvroReadSupport.setAvroReadSchema(configuration, encoderSchema);
+     * AvroReadSupport.setRequestedProjection(configuration, projectionSchema);
+     * PCollection<GenericRecord> records =
+     *     readPipeline.apply(ParquetIO.read(SCHEMA).from(path).withConfiguration(configuration);
+     * </pre>
+     */
+    @Deprecated
     public ReadFiles withProjection(Schema projectionSchema, Schema encoderSchema) {
-      return toBuilder()
-          .setProjectionSchema(projectionSchema)
-          .setEncoderSchema(encoderSchema)
-          .setSplittable(true)
-          .build();
+      Configuration configuration = SerializableConfiguration.newConfiguration(getConfiguration());
+      AvroReadSupport.setAvroReadSchema(configuration, encoderSchema);
+      AvroReadSupport.setRequestedProjection(configuration, projectionSchema);
+      return withConfiguration(configuration).withSplit();
     }
 
     /** Specify Hadoop configuration for ParquetReader. */
@@ -684,7 +706,9 @@ public class ParquetIO {
     @Override
     public PCollection<GenericRecord> expand(PCollection<ReadableFile> input) {
       checkNotNull(getSchema(), "Schema can not be null");
-      return input.apply(ParDo.of(getReaderFn())).setCoder(getCollectionCoder());
+      Schema schema = (getProjectionSchema() != null) ? getProjectionSchema() : getSchema();
+      Coder coder = getInferBeamSchema() ? AvroUtils.schemaCoder(schema) : AvroCoder.of(schema);
+      return input.apply(ParDo.of(getReaderFn())).setCoder(coder);
     }
 
     /** Returns Parquet file reading function based on {@link #isSplittable()}. */
@@ -697,18 +721,6 @@ public class ParquetIO {
               getConfiguration())
           : new ReadFn<>(
               getAvroDataModel(), GenericRecordPassthroughFn.create(), getConfiguration());
-    }
-
-    /**
-     * Returns {@link org.apache.beam.sdk.schemas.SchemaCoder} when using Beam schemas, {@link
-     * AvroCoder} when not using Beam schema.
-     */
-    @Experimental(Kind.SCHEMAS)
-    private Coder<GenericRecord> getCollectionCoder() {
-      Schema coderSchema =
-          getProjectionSchema() != null && isSplittable() ? getEncoderSchema() : getSchema();
-
-      return getInferBeamSchema() ? AvroUtils.schemaCoder(coderSchema) : AvroCoder.of(coderSchema);
     }
 
     @DoFn.BoundedPerElement
@@ -758,8 +770,7 @@ public class ParquetIO {
         }
         AvroReadSupport<GenericRecord> readSupport = new AvroReadSupport<>(model);
         if (requestSchemaString != null) {
-          AvroReadSupport.setRequestedProjection(
-              conf, new Schema.Parser().parse(requestSchemaString));
+          conf.set(AvroReadSupport.AVRO_REQUESTED_PROJECTION, requestSchemaString);
         }
         ParquetReadOptions options = HadoopReadOptions.builder(conf).build();
         ParquetFileReader reader =

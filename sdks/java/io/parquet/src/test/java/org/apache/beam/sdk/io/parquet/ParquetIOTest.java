@@ -30,8 +30,11 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import org.apache.avro.Schema;
+import org.apache.avro.Schema.Field;
 import org.apache.avro.generic.GenericData;
 import org.apache.avro.generic.GenericDatumWriter;
 import org.apache.avro.generic.GenericRecord;
@@ -83,31 +86,8 @@ public class ParquetIOTest implements Serializable {
           + "    {\"name\":\"id\",\"type\":\"string\"}"
           + "  ]"
           + "}";
-
   private static final Schema SCHEMA = new Schema.Parser().parse(SCHEMA_STRING);
 
-  private static final String REQUESTED_SCHEMA_STRING =
-      "{"
-          + "\"type\":\"record\", "
-          + "\"name\":\"testrecord\","
-          + "\"fields\":["
-          + "    {\"name\":\"id\",\"type\":\"string\"}"
-          + "  ]"
-          + "}";
-
-  private static final String REQUESTED_SCHEMA_ENCODER_STRING =
-      "{"
-          + "\"type\":\"record\", "
-          + "\"name\":\"testrecord\","
-          + "\"fields\":["
-          + "    {\"name\":\"name\",\"type\":[\"string\",\"null\"]},"
-          + "    {\"name\":\"id\",\"type\":\"string\"}"
-          + "  ]"
-          + "}";
-
-  private static final Schema REQUESTED_ENCODER_SCHEMA =
-      new Schema.Parser().parse(REQUESTED_SCHEMA_ENCODER_STRING);
-  private static final Schema REQUESTED_SCHEMA = new Schema.Parser().parse(REQUESTED_SCHEMA_STRING);
   private static final String[] SCIENTISTS =
       new String[] {
         "Einstein", "Darwin", "Copernicus", "Pasteur", "Curie",
@@ -116,9 +96,7 @@ public class ParquetIOTest implements Serializable {
 
   @Test
   public void testWriteAndReadWithProjection() {
-    List<GenericRecord> requestRecords = generateRequestedRecords(1000);
     List<GenericRecord> records = generateGenericRecords(1000);
-
     mainPipeline
         .apply(Create.of(records).withCoder(AvroCoder.of(SCHEMA)))
         .apply(
@@ -127,11 +105,13 @@ public class ParquetIOTest implements Serializable {
                 .to(temporaryFolder.getRoot().getAbsolutePath()));
     mainPipeline.run().waitUntilFinish();
 
+    List<GenericRecord> requestRecords = generateRequestedRecords(1000);
+    Schema projectedSchema = projectSchema(SCHEMA, Arrays.asList("id"));
     PCollection<GenericRecord> readBack =
         readPipeline.apply(
             ParquetIO.read(SCHEMA)
                 .from(temporaryFolder.getRoot().getAbsolutePath() + "/*")
-                .withProjection(REQUESTED_SCHEMA, REQUESTED_ENCODER_SCHEMA));
+                .withProjection(projectedSchema, projectedSchema));
     PAssert.that(readBack).containsInAnyOrder(requestRecords);
     readPipeline.run().waitUntilFinish();
   }
@@ -356,14 +336,14 @@ public class ParquetIOTest implements Serializable {
   }
 
   private List<GenericRecord> generateRequestedRecords(long count) {
-    ArrayList<GenericRecord> data = new ArrayList<>();
-    GenericRecordBuilder builder = new GenericRecordBuilder(REQUESTED_ENCODER_SCHEMA);
+    Schema projectedSchema = projectSchema(SCHEMA, Arrays.asList("id"));
+    GenericRecordBuilder builder = new GenericRecordBuilder(projectedSchema);
+    List<GenericRecord> records = new ArrayList<>();
     for (int i = 0; i < count; i++) {
-      int index = i % SCIENTISTS.length;
-      GenericRecord record = builder.set("id", Integer.toString(i)).set("name", null).build();
-      data.add(record);
+      GenericRecord record = builder.set("id", Integer.toString(i)).build();
+      records.add(record);
     }
-    return data;
+    return records;
   }
 
   @Test
@@ -525,5 +505,34 @@ public class ParquetIOTest implements Serializable {
       }
       return baos.toString();
     }
+  }
+
+  /** Returns a copy of the {@link Schema} without the fieldNames fields. */
+  private static Schema projectSchema(Schema schema, List<String> fieldNames) {
+    List<Field> selectedFields = new ArrayList<>();
+    for (String fieldName : fieldNames) {
+      selectedFields.add(deepCopyField(schema.getField(fieldName)));
+    }
+    return Schema.createRecord(
+        schema.getName() + "_projected",
+        schema.getDoc(),
+        schema.getNamespace(),
+        schema.isError(),
+        selectedFields);
+  }
+
+  private static Field deepCopyField(Field field) {
+    Schema.Field newField =
+        new Schema.Field(
+            field.name(), field.schema(), field.doc(), field.defaultVal(), field.order());
+    for (Map.Entry<String, Object> kv : field.getObjectProps().entrySet()) {
+      newField.addProp(kv.getKey(), kv.getValue());
+    }
+    if (field.aliases() != null) {
+      for (String alias : field.aliases()) {
+        newField.addAlias(alias);
+      }
+    }
+    return newField;
   }
 }
