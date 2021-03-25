@@ -43,8 +43,13 @@ import org.apache.beam.sdk.coders.CannotProvideCoderException;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.coders.CoderRegistry;
 import org.apache.beam.sdk.coders.StringUtf8Coder;
+import org.apache.beam.sdk.io.AvroIO;
+import org.apache.beam.sdk.io.AvroIO.Read;
+import org.apache.beam.sdk.io.AvroIO.Read.Builder;
 import org.apache.beam.sdk.io.FileIO;
+import org.apache.beam.sdk.io.FileIO.MatchConfiguration;
 import org.apache.beam.sdk.io.FileIO.ReadableFile;
+import org.apache.beam.sdk.io.fs.EmptyMatchTreatment;
 import org.apache.beam.sdk.io.fs.ResourceId;
 import org.apache.beam.sdk.io.hadoop.SerializableConfiguration;
 import org.apache.beam.sdk.io.parquet.ParquetIO.ReadFiles.ReadFn;
@@ -266,6 +271,7 @@ public class ParquetIO {
    */
   public static Read read(Schema schema) {
     return new AutoValue_ParquetIO_Read.Builder()
+        .setMatchConfiguration(MatchConfiguration.create(EmptyMatchTreatment.DISALLOW))
         .setSchema(schema)
         .setInferBeamSchema(false)
         .setSplittable(false)
@@ -337,6 +343,8 @@ public class ParquetIO {
       abstract Builder setSplittable(boolean split);
 
       abstract Builder setFilepattern(ValueProvider<String> filepattern);
+
+      abstract Builder setMatchConfiguration(MatchConfiguration matchConfiguration);
 
       abstract Builder setSchema(Schema schema);
 
@@ -497,8 +505,7 @@ public class ParquetIO {
           .apply(FileIO.matchAll())
           .apply(FileIO.readMatches())
           .apply(
-              parseFilesGenericRecords(getParseFn())
-                  .toBuilder()
+              parseFilesGenericRecords(getParseFn()).toBuilder()
                   .setCoder(getCoder())
                   .setSplittable(isSplittable())
                   .build());
