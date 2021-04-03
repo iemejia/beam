@@ -26,16 +26,22 @@ import java.io.OutputStream;
 import java.util.List;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
+import org.apache.beam.sdk.options.FileStagingOptions;
 import org.apache.beam.sdk.options.PipelineOptions;
 import org.apache.beam.sdk.util.ZipFiles;
+import org.apache.beam.sdk.util.common.ReflectHelpers;
+import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.MoreObjects;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Preconditions;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Strings;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.hash.Funnels;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.hash.Hasher;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.hash.Hashing;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /** Utilities for working with classpath resources for pipelines. */
 public class PipelineResources {
+  private static final Logger LOG = LoggerFactory.getLogger(PipelineResources.class);
 
   /**
    * Uses algorithm provided via {@link
@@ -62,6 +68,31 @@ public class PipelineResources {
    */
   private static Predicate<String> isStageable() {
     return resourcePath -> !resourcePath.contains("gradle/wrapper");
+  }
+
+  /**
+   * Goes through the list of files that need to be staged on runner. Removes nonexistent
+   * directories and packages existing ones. This is necessary for runners that require filesToStage
+   * to be jars only.
+   *
+   * @param options options object with the files to stage and temp location for staging
+   */
+  public static void prepareFilesForStaging(FileStagingOptions options) {
+    List<String> filesToStage = options.getFilesToStage();
+    if (filesToStage == null || filesToStage.isEmpty()) {
+      filesToStage = detectClassPathResourcesToStage(ReflectHelpers.findClassLoader(), options);
+      LOG.info(
+          "PipelineOptions.filesToStage was not specified. "
+              + "Defaulting to files from the classpath: will stage {} files. "
+              + "Enable logging at DEBUG level to see which files will be staged.",
+          filesToStage.size());
+      LOG.debug("Classpath elements: {}", filesToStage);
+    }
+    options.setFilesToStage(
+        PipelineResources.prepareFilesForStaging(
+            filesToStage,
+            MoreObjects.firstNonNull(
+                options.getTempLocation(), System.getProperty("java.io.tmpdir"))));
   }
 
   /**
