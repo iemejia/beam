@@ -114,15 +114,15 @@ public class DeltaIO {
         snapshot = log.snapshot();
       }
 
-      List<String> paths =
+      List<String> deltaFilesPaths =
           snapshot.getAllFiles().stream()
               .map(addFile -> Paths.get(getPath().get(), addFile.getPath()).toString())
               .collect(Collectors.toList());
-      LOG.debug("Matched paths: " + paths.toString());
+      LOG.debug("Delta files: " + deltaFilesPaths.toString());
 
       List<Metadata> metadata = new ArrayList<>();
       try {
-        List<MatchResult> match = FileSystems.match(paths, EmptyMatchTreatment.DISALLOW);
+        List<MatchResult> match = FileSystems.match(deltaFilesPaths, EmptyMatchTreatment.DISALLOW);
         for (MatchResult matchResult : match) {
           metadata.addAll(matchResult.metadata());
         }
@@ -130,7 +130,7 @@ public class DeltaIO {
         throw new RuntimeException(e);
       }
 
-      return input.apply("Find files", Create.of(metadata));
+      return input.apply("Matched Delta files", Create.of(metadata));
     }
 
     @Override
