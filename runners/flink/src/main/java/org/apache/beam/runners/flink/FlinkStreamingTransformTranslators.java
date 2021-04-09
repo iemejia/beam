@@ -1176,8 +1176,8 @@ class FlinkStreamingTransformTranslators {
               inputKvCoder.getValueCoder(),
               input.getWindowingStrategy().getWindowFn().windowCoder());
 
-      WindowedValue.ValueOnlyWindowedValueCoder<KeyedWorkItem<K, InputT>> windowedWorkItemCoder =
-          WindowedValue.getValueOnlyCoder(workItemCoder);
+      WindowedValue.ParamWindowedValueCoder<KeyedWorkItem<K, InputT>> windowedWorkItemCoder =
+          WindowedValue.getParamWindowedValueCoder(workItemCoder);
 
       CoderTypeInformation<WindowedValue<KeyedWorkItem<K, InputT>>> workItemTypeInfo =
           new CoderTypeInformation<>(windowedWorkItemCoder, context.getPipelineOptions());

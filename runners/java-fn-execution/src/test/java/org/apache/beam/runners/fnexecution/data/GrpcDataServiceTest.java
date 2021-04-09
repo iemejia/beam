@@ -60,7 +60,7 @@ import org.junit.runners.JUnit4;
 public class GrpcDataServiceTest {
   private static final String TRANSFORM_ID = "888";
   private static final Coder<WindowedValue<String>> CODER =
-      LengthPrefixCoder.of(WindowedValue.getValueOnlyCoder(StringUtf8Coder.of()));
+      LengthPrefixCoder.of(WindowedValue.getParamWindowedValueCoder(StringUtf8Coder.of()));
 
   @Test
   public void testMessageReceivedBySingleClientWhenThereAreMultipleClients() throws Exception {

@@ -103,7 +103,8 @@ public class FlinkPipelineOptionsTest {
   @Test(expected = Exception.class)
   public void parDoBaseClassPipelineOptionsNullTest() {
     TupleTag<String> mainTag = new TupleTag<>("main-output");
-    Coder<WindowedValue<String>> coder = WindowedValue.getValueOnlyCoder(StringUtf8Coder.of());
+    Coder<WindowedValue<String>> coder =
+        WindowedValue.getParamWindowedValueCoder(StringUtf8Coder.of());
     new DoFnOperator<>(
         new TestDoFn(),
         "stepName",
@@ -129,7 +130,8 @@ public class FlinkPipelineOptionsTest {
 
     TupleTag<String> mainTag = new TupleTag<>("main-output");
 
-    Coder<WindowedValue<String>> coder = WindowedValue.getValueOnlyCoder(StringUtf8Coder.of());
+    Coder<WindowedValue<String>> coder =
+        WindowedValue.getParamWindowedValueCoder(StringUtf8Coder.of());
     DoFnOperator<String, String> doFnOperator =
         new DoFnOperator<>(
             new TestDoFn(),

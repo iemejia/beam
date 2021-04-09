@@ -508,7 +508,14 @@ public abstract class WindowedValue<T> {
     return FullWindowedValueCoder.of(valueCoder, windowCoder);
   }
 
-  /** Returns the {@code ValueOnlyCoder} from the given valueCoder. */
+  /**
+   * Returns the {@code ValueOnlyCoder} from the given valueCoder.
+   *
+   * @deprecated Prefer {@link #getParamWindowedValueCoder(Coder)} instead. ParamWindowedValueCoder
+   *     is a general purpose implementation of the same concept but makes timestamp, windows and
+   *     pane info configurable.
+   */
+  @Deprecated
   public static <T> ValueOnlyWindowedValueCoder<T> getValueOnlyCoder(Coder<T> valueCoder) {
     return ValueOnlyWindowedValueCoder.of(valueCoder);
   }

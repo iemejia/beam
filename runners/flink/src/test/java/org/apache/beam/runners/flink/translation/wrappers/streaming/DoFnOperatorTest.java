@@ -180,8 +180,8 @@ public class DoFnOperatorTest {
   @SuppressWarnings("unchecked")
   public void testMultiOutputOutput() throws Exception {
 
-    WindowedValue.ValueOnlyWindowedValueCoder<String> coder =
-        WindowedValue.getValueOnlyCoder(StringUtf8Coder.of());
+    WindowedValue.ParamWindowedValueCoder<String> coder =
+        WindowedValue.getParamWindowedValueCoder(StringUtf8Coder.of());
 
     TupleTag<String> mainOutput = new TupleTag<>("main-output");
     TupleTag<String> additionalOutput1 = new TupleTag<>("output-1");
@@ -1523,8 +1523,8 @@ public class DoFnOperatorTest {
   @Test
   public void testBundle() throws Exception {
 
-    WindowedValue.ValueOnlyWindowedValueCoder<String> windowedValueCoder =
-        WindowedValue.getValueOnlyCoder(StringUtf8Coder.of());
+    WindowedValue.ParamWindowedValueCoder<String> windowedValueCoder =
+        WindowedValue.getParamWindowedValueCoder(StringUtf8Coder.of());
 
     TupleTag<String> outputTag = new TupleTag<>("main-output");
     FlinkPipelineOptions options = FlinkPipelineOptions.defaults();
@@ -1665,8 +1665,8 @@ public class DoFnOperatorTest {
         new KvToByteBufferKeySelector<>(
             keyCoder, new SerializablePipelineOptions(FlinkPipelineOptions.defaults()));
     KvCoder<String, String> kvCoder = KvCoder.of(keyCoder, StringUtf8Coder.of());
-    WindowedValue.ValueOnlyWindowedValueCoder<KV<String, String>> windowedValueCoder =
-        WindowedValue.getValueOnlyCoder(kvCoder);
+    WindowedValue.ParamWindowedValueCoder<KV<String, String>> windowedValueCoder =
+        WindowedValue.getParamWindowedValueCoder(kvCoder);
 
     TupleTag<String> outputTag = new TupleTag<>("main-output");
     FlinkPipelineOptions options = FlinkPipelineOptions.defaults();
@@ -1802,8 +1802,8 @@ public class DoFnOperatorTest {
     TupleTag<String> outputTag = new TupleTag<>("main-output");
 
     StringUtf8Coder coder = StringUtf8Coder.of();
-    WindowedValue.ValueOnlyWindowedValueCoder<String> windowedValueCoder =
-        WindowedValue.getValueOnlyCoder(coder);
+    WindowedValue.ParamWindowedValueCoder<String> windowedValueCoder =
+        WindowedValue.getParamWindowedValueCoder(coder);
 
     DoFnOperator.MultiOutputOutputManagerFactory<String> outputManagerFactory =
         new DoFnOperator.MultiOutputOutputManagerFactory<>(
@@ -1904,8 +1904,8 @@ public class DoFnOperatorTest {
     options.setCheckpointingInterval(1L);
 
     TupleTag<String> outputTag = new TupleTag<>("main-output");
-    WindowedValue.ValueOnlyWindowedValueCoder<String> windowedValueCoder =
-        WindowedValue.getValueOnlyCoder(StringUtf8Coder.of());
+    WindowedValue.ParamWindowedValueCoder<String> windowedValueCoder =
+        WindowedValue.getParamWindowedValueCoder(StringUtf8Coder.of());
 
     numStartBundleCalled = 0;
     DoFn<String, String> doFn =
@@ -2019,8 +2019,8 @@ public class DoFnOperatorTest {
     KvToByteBufferKeySelector<String, String> keySelector =
         new KvToByteBufferKeySelector<>(keyCoder, new SerializablePipelineOptions(options));
     KvCoder<String, String> kvCoder = KvCoder.of(keyCoder, StringUtf8Coder.of());
-    WindowedValue.ValueOnlyWindowedValueCoder<KV<String, String>> windowedValueCoder =
-        WindowedValue.getValueOnlyCoder(kvCoder);
+    WindowedValue.ParamWindowedValueCoder<KV<String, String>> windowedValueCoder =
+        WindowedValue.getParamWindowedValueCoder(kvCoder);
 
     DoFn<KV<String, String>, KV<String, String>> doFn =
         new DoFn<KV<String, String>, KV<String, String>>() {
@@ -2146,8 +2146,8 @@ public class DoFnOperatorTest {
     KvToByteBufferKeySelector<String, String> keySelector =
         new KvToByteBufferKeySelector<>(keyCoder, null);
     KvCoder<String, String> kvCoder = KvCoder.of(keyCoder, StringUtf8Coder.of());
-    WindowedValue.ValueOnlyWindowedValueCoder<KV<String, String>> windowedValueCoder =
-        WindowedValue.getValueOnlyCoder(kvCoder);
+    WindowedValue.ParamWindowedValueCoder<KV<String, String>> windowedValueCoder =
+        WindowedValue.getParamWindowedValueCoder(kvCoder);
 
     DoFn<KV<String, String>, KV<String, String>> doFn =
         new DoFn<KV<String, String>, KV<String, String>>() {
@@ -2195,8 +2195,8 @@ public class DoFnOperatorTest {
     TupleTag<String> outputTag = new TupleTag<>("main-output");
 
     StringUtf8Coder coder = StringUtf8Coder.of();
-    WindowedValue.ValueOnlyWindowedValueCoder<String> windowedValueCoder =
-        WindowedValue.getValueOnlyCoder(coder);
+    WindowedValue.ParamWindowedValueCoder<String> windowedValueCoder =
+        WindowedValue.getParamWindowedValueCoder(coder);
 
     DoFnOperator.MultiOutputOutputManagerFactory<String> outputManagerFactory =
         new DoFnOperator.MultiOutputOutputManagerFactory<>(
@@ -2284,8 +2284,8 @@ public class DoFnOperatorTest {
     options.setParallelism(4);
 
     TupleTag<String> outputTag = new TupleTag<>("main-output");
-    WindowedValue.ValueOnlyWindowedValueCoder<String> windowedValueCoder =
-        WindowedValue.getValueOnlyCoder(StringUtf8Coder.of());
+    WindowedValue.ParamWindowedValueCoder<String> windowedValueCoder =
+        WindowedValue.getParamWindowedValueCoder(StringUtf8Coder.of());
     IdentityDoFn<String> doFn =
         new IdentityDoFn<String>() {
           @FinishBundle

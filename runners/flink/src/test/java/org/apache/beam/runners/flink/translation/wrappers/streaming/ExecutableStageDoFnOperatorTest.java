@@ -158,12 +158,9 @@ public class ExecutableStageDoFnOperatorTest {
 
   private final String stateId = "userState";
   private final ExecutableStagePayload stagePayloadWithUserState =
-      stagePayload
-          .toBuilder()
+      stagePayload.toBuilder()
           .setComponents(
-              stagePayload
-                  .getComponents()
-                  .toBuilder()
+              stagePayload.getComponents().toBuilder()
                   .putTransforms(
                       "transform",
                       RunnerApi.PTransform.newBuilder()
@@ -269,9 +266,8 @@ public class ExecutableStageDoFnOperatorTest {
 
   @Test
   public void outputsAreTaggedCorrectly() throws Exception {
-
-    WindowedValue.ValueOnlyWindowedValueCoder<Integer> coder =
-        WindowedValue.getValueOnlyCoder(VarIntCoder.of());
+    WindowedValue.ParamWindowedValueCoder<Integer> coder =
+        WindowedValue.getParamWindowedValueCoder(VarIntCoder.of());
 
     TupleTag<Integer> mainOutput = new TupleTag<>("main-output");
     TupleTag<Integer> additionalOutput1 = new TupleTag<>("output-1");
@@ -1071,8 +1067,8 @@ public class ExecutableStageDoFnOperatorTest {
 
   @Test
   public void testSerialization() {
-    WindowedValue.ValueOnlyWindowedValueCoder<Integer> coder =
-        WindowedValue.getValueOnlyCoder(VarIntCoder.of());
+    WindowedValue.ParamWindowedValueCoder<Integer> coder =
+        WindowedValue.getParamWindowedValueCoder(VarIntCoder.of());
 
     TupleTag<Integer> mainOutput = new TupleTag<>("main-output");
     TupleTag<Integer> additionalOutput = new TupleTag<>("additional-output");

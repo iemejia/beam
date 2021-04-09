@@ -117,7 +117,7 @@ public class KeyedPValueTrackingVisitorTest {
                     KvCoder.of(
                         StringUtf8Coder.of(),
                         IterableCoder.of(
-                            WindowedValue.getValueOnlyCoder(
+                            WindowedValue.getParamWindowedValueCoder(
                                 KvCoder.of(StringUtf8Coder.of(), VarIntCoder.of()))))));
 
     PCollection<KeyedWorkItem<String, KV<String, Integer>>> unkeyed =
@@ -149,7 +149,7 @@ public class KeyedPValueTrackingVisitorTest {
                 .withCoder(
                     KvCoder.of(
                         StringUtf8Coder.of(),
-                        WindowedValue.getValueOnlyCoder(
+                        WindowedValue.getParamWindowedValueCoder(
                             KvCoder.of(StringUtf8Coder.of(), VarIntCoder.of())))));
 
     TupleTag<KeyedWorkItem<String, KV<String, Integer>>> keyedTag = new TupleTag<>();
