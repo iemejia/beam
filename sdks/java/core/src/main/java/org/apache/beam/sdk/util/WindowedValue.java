@@ -874,7 +874,8 @@ public abstract class WindowedValue<T> {
 
     private void writeObject(ObjectOutputStream out) throws IOException {
       out.defaultWriteObject();
-      out.writeObject(getPayload(this));
+      byte[] payload = getPayload(this);
+      out.writeObject(payload);
     }
 
     private void readObject(ObjectInputStream in) throws IOException, ClassNotFoundException {
