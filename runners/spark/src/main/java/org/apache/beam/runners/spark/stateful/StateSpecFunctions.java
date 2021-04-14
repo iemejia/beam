@@ -38,6 +38,8 @@ import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
 import org.apache.beam.sdk.transforms.windowing.GlobalWindow;
 import org.apache.beam.sdk.transforms.windowing.PaneInfo;
 import org.apache.beam.sdk.util.WindowedValue;
+import org.apache.beam.sdk.util.WindowedValue.ParamWindowedValueCoder;
+import org.apache.beam.sdk.util.WindowedValue.WindowedValueCoder;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Optional;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Stopwatch;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.collect.Iterators;
@@ -164,9 +166,7 @@ public class StateSpecFunctions {
 
           // read microbatch as a serialized collection.
           final List<byte[]> readValues = new ArrayList<>();
-          WindowedValue.FullWindowedValueCoder<T> coder =
-              WindowedValue.FullWindowedValueCoder.of(
-                  source.getOutputCoder(), GlobalWindow.Coder.INSTANCE);
+          WindowedValueCoder<T> coder = ParamWindowedValueCoder.of(source.getOutputCoder());
           try {
             // measure how long a read takes per-partition.
             boolean finished = !microbatchReader.start();

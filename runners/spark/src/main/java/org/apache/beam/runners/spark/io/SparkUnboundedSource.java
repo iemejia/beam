@@ -40,8 +40,9 @@ import org.apache.beam.sdk.metrics.Metrics;
 import org.apache.beam.sdk.metrics.MetricsContainer;
 import org.apache.beam.sdk.metrics.MetricsEnvironment;
 import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
-import org.apache.beam.sdk.transforms.windowing.GlobalWindow;
 import org.apache.beam.sdk.util.WindowedValue;
+import org.apache.beam.sdk.util.WindowedValue.ParamWindowedValueCoder;
+import org.apache.beam.sdk.util.WindowedValue.WindowedValueCoder;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Splitter;
 import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.api.java.JavaSparkContext$;
@@ -120,9 +121,7 @@ public class SparkUnboundedSource {
         .register();
 
     // output the actual (deserialized) stream.
-    WindowedValue.FullWindowedValueCoder<T> coder =
-        WindowedValue.FullWindowedValueCoder.of(
-            source.getOutputCoder(), GlobalWindow.Coder.INSTANCE);
+    WindowedValueCoder<T> coder = ParamWindowedValueCoder.of(source.getOutputCoder());
     JavaDStream<WindowedValue<T>> readUnboundedStream =
         mapWithStateDStream
             .flatMap(new Tuple2byteFlatMapFunction())

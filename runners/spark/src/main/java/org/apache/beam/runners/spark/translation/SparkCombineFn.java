@@ -17,6 +17,8 @@
  */
 package org.apache.beam.runners.spark.translation;
 
+import static org.apache.beam.runners.spark.coders.CoderHelpers.windowedValueCoder;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -502,13 +504,12 @@ public class SparkCombineFn<InputT, ValueT, AccumT, OutputT> implements Serializ
     @SuppressWarnings("unchecked")
     WindowedAccumulatorCoder(
         Function<InputT, ValueT> toValue,
-        Coder<BoundedWindow> windowCoder,
         Comparator<BoundedWindow> windowComparator,
         Coder<AccumT> accumCoder,
+        WindowingStrategy<?, ?> windowingStrategy,
         WindowedAccumulator.Type type) {
-
       this.toValue = toValue;
-      this.accumCoder = WindowedValue.FullWindowedValueCoder.of(accumCoder, windowCoder);
+      this.accumCoder = windowedValueCoder(accumCoder, windowingStrategy);
       this.windowComparator = windowComparator;
       this.wrap = IterableCoder.of(this.accumCoder);
       this.type = type;
@@ -774,11 +775,9 @@ public class SparkCombineFn<InputT, ValueT, AccumT, OutputT> implements Serializ
   }
 
   WindowedAccumulatorCoder<InputT, ValueT, AccumT> accumulatorCoder(
-      Coder<BoundedWindow> windowCoder,
-      Coder<AccumT> accumulatorCoder,
-      WindowingStrategy<?, ?> windowingStrategy) {
+      Coder<AccumT> accumulatorCoder, WindowingStrategy<?, ?> windowingStrategy) {
     return new WindowedAccumulatorCoder<>(
-        toValue, windowCoder, windowComparator, accumulatorCoder, getType(windowingStrategy));
+        toValue, windowComparator, accumulatorCoder, windowingStrategy, getType(windowingStrategy));
   }
 
   CombineWithContext.CombineFnWithContext<ValueT, AccumT, OutputT> getCombineFn() {
