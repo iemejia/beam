@@ -17,6 +17,8 @@
  */
 package org.apache.beam.runners.spark.structuredstreaming.translation.batch;
 
+import static org.apache.beam.runners.spark.structuredstreaming.translation.helpers.CoderHelpers.windowedValueCoder;
+
 import java.util.ArrayList;
 import java.util.List;
 import org.apache.beam.runners.spark.structuredstreaming.translation.TransformTranslator;
@@ -30,6 +32,7 @@ import org.apache.beam.sdk.transforms.Combine;
 import org.apache.beam.sdk.transforms.PTransform;
 import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
 import org.apache.beam.sdk.util.WindowedValue;
+import org.apache.beam.sdk.util.WindowedValue.WindowedValueCoder;
 import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.WindowingStrategy;
@@ -86,9 +89,8 @@ class CombinePerKeyTranslatorBatch<K, InputT, AccumT, OutputT>
                 .toColumn());
 
     // expand the list into separate elements and put the key back into the elements
-    WindowedValue.WindowedValueCoder<KV<K, OutputT>> wvCoder =
-        WindowedValue.FullWindowedValueCoder.of(
-            outputKVCoder, input.getWindowingStrategy().getWindowFn().windowCoder());
+    WindowedValueCoder<KV<K, OutputT>> wvCoder =
+        windowedValueCoder(outputKVCoder, input.getWindowingStrategy());
     Dataset<WindowedValue<KV<K, OutputT>>> outputDataset =
         combinedDataset.flatMap(
             (FlatMapFunction<

@@ -24,8 +24,8 @@ import org.apache.beam.runners.spark.structuredstreaming.translation.helpers.Enc
 import org.apache.beam.sdk.coders.ByteArrayCoder;
 import org.apache.beam.sdk.coders.Coder;
 import org.apache.beam.sdk.transforms.PTransform;
-import org.apache.beam.sdk.transforms.windowing.GlobalWindow;
 import org.apache.beam.sdk.util.WindowedValue;
+import org.apache.beam.sdk.util.WindowedValue.ValueOnlyWindowedValueCoder;
 import org.apache.beam.sdk.values.PBegin;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.spark.sql.Dataset;
@@ -37,7 +37,7 @@ public class ImpulseTranslatorBatch
   public void translateTransform(
       PTransform<PBegin, PCollection<byte[]>> transform, TranslationContext context) {
     Coder<WindowedValue<byte[]>> windowedValueCoder =
-        WindowedValue.FullWindowedValueCoder.of(ByteArrayCoder.of(), GlobalWindow.Coder.INSTANCE);
+        ValueOnlyWindowedValueCoder.of(ByteArrayCoder.of());
     Dataset<WindowedValue<byte[]>> dataset =
         context
             .getSparkSession()

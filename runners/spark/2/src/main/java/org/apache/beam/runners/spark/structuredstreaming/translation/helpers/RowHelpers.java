@@ -25,8 +25,9 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import org.apache.beam.sdk.coders.Coder;
-import org.apache.beam.sdk.transforms.windowing.GlobalWindow;
 import org.apache.beam.sdk.util.WindowedValue;
+import org.apache.beam.sdk.util.WindowedValue.ValueOnlyWindowedValueCoder;
+import org.apache.beam.sdk.util.WindowedValue.WindowedValueCoder;
 import org.apache.spark.api.java.function.MapFunction;
 import org.apache.spark.sql.Row;
 import org.apache.spark.sql.catalyst.InternalRow;
@@ -53,15 +54,14 @@ public final class RowHelpers {
   }
 
   /**
-   * Serialize a windowedValue to bytes using windowedValueCoder {@link
-   * WindowedValue.FullWindowedValueCoder} and stores it an InternalRow.
+   * Serialize a windowedValue to bytes using {@link WindowedValueCoder} and stores it an
+   * InternalRow.
    */
   public static <T> InternalRow storeWindowedValueInRow(
       WindowedValue<T> windowedValue, Coder<T> coder) {
     List<Object> list = new ArrayList<>();
     // serialize the windowedValue to bytes array to comply with dataset binary schema
-    WindowedValue.FullWindowedValueCoder<T> windowedValueCoder =
-        WindowedValue.FullWindowedValueCoder.of(coder, GlobalWindow.Coder.INSTANCE);
+    WindowedValueCoder<T> windowedValueCoder = ValueOnlyWindowedValueCoder.of(coder);
     ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
     try {
       windowedValueCoder.encode(windowedValue, byteArrayOutputStream);

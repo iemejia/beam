@@ -141,7 +141,7 @@ class ParDoTranslatorBatch<InputT, OutputT>
             sideInputMapping);
 
     MultiOuputCoder multipleOutputCoder =
-        MultiOuputCoder.of(SerializableCoder.of(TupleTag.class), outputCoderMap, windowCoder);
+        MultiOuputCoder.of(SerializableCoder.of(TupleTag.class), outputCoderMap, windowingStrategy);
     Dataset<Tuple2<TupleTag<?>, WindowedValue<?>>> allOutputs =
         inputDataSet.mapPartitions(doFnWrapper, EncoderHelpers.fromBeamCoder(multipleOutputCoder));
     if (outputs.entrySet().size() > 1) {

@@ -17,6 +17,8 @@
  */
 package org.apache.beam.runners.spark.structuredstreaming.translation.batch;
 
+import static org.apache.beam.runners.spark.structuredstreaming.translation.helpers.CoderHelpers.windowedValueCoder;
+
 import java.io.Serializable;
 import org.apache.beam.runners.core.InMemoryStateInternals;
 import org.apache.beam.runners.core.StateInternals;
@@ -32,6 +34,7 @@ import org.apache.beam.sdk.coders.IterableCoder;
 import org.apache.beam.sdk.coders.KvCoder;
 import org.apache.beam.sdk.transforms.PTransform;
 import org.apache.beam.sdk.util.WindowedValue;
+import org.apache.beam.sdk.util.WindowedValue.WindowedValueCoder;
 import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.WindowingStrategy;
@@ -60,10 +63,8 @@ class GroupByKeyTranslatorBatch<K, V>
         input.groupByKey(KVHelpers.extractKey(), EncoderHelpers.fromBeamCoder(keyCoder));
 
     // group also by windows
-    WindowedValue.FullWindowedValueCoder<KV<K, Iterable<V>>> outputCoder =
-        WindowedValue.FullWindowedValueCoder.of(
-            KvCoder.of(keyCoder, IterableCoder.of(valueCoder)),
-            windowingStrategy.getWindowFn().windowCoder());
+    WindowedValueCoder<KV<K, Iterable<V>>> outputCoder =
+        windowedValueCoder(KvCoder.of(keyCoder, IterableCoder.of(valueCoder)), windowingStrategy);
     Dataset<WindowedValue<KV<K, Iterable<V>>>> output =
         groupByKeyOnly.flatMapGroups(
             new GroupAlsoByWindowViaOutputBufferFn<>(

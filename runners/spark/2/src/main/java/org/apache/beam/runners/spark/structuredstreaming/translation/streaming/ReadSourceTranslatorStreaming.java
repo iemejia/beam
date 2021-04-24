@@ -29,6 +29,8 @@ import org.apache.beam.sdk.runners.AppliedPTransform;
 import org.apache.beam.sdk.transforms.PTransform;
 import org.apache.beam.sdk.transforms.windowing.GlobalWindow;
 import org.apache.beam.sdk.util.WindowedValue;
+import org.apache.beam.sdk.util.WindowedValue.FullWindowedValueCoder;
+import org.apache.beam.sdk.util.WindowedValue.WindowedValueCoder;
 import org.apache.beam.sdk.values.PBegin;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.spark.sql.Dataset;
@@ -71,9 +73,8 @@ class ReadSourceTranslatorStreaming<T>
             .load();
 
     // extract windowedValue from Row
-    WindowedValue.FullWindowedValueCoder<T> windowedValueCoder =
-        WindowedValue.FullWindowedValueCoder.of(
-            source.getOutputCoder(), GlobalWindow.Coder.INSTANCE);
+    WindowedValueCoder<T> windowedValueCoder =
+        FullWindowedValueCoder.of(source.getOutputCoder(), GlobalWindow.Coder.INSTANCE);
     Dataset<WindowedValue<T>> dataset =
         rowDataset.map(
             RowHelpers.extractWindowedValueFromRowMapFunction(windowedValueCoder),

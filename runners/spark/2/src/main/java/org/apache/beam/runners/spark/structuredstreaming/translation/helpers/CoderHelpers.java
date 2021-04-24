@@ -21,6 +21,13 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import org.apache.beam.sdk.coders.Coder;
+import org.apache.beam.sdk.transforms.windowing.BoundedWindow;
+import org.apache.beam.sdk.transforms.windowing.GlobalWindows;
+import org.apache.beam.sdk.transforms.windowing.WindowFn;
+import org.apache.beam.sdk.util.WindowedValue.FullWindowedValueCoder;
+import org.apache.beam.sdk.util.WindowedValue.ValueOnlyWindowedValueCoder;
+import org.apache.beam.sdk.util.WindowedValue.WindowedValueCoder;
+import org.apache.beam.sdk.values.WindowingStrategy;
 
 /** Serialization utility class. */
 public final class CoderHelpers {
@@ -59,5 +66,19 @@ public final class CoderHelpers {
     } catch (IOException e) {
       throw new IllegalStateException("Error decoding bytes for coder: " + coder, e);
     }
+  }
+
+  /**
+   * @return a {@link WindowedValueCoder} depending on the given {@link WindowingStrategy} coder, if
+   *     it is based on {@link GlobalWindows} it creates a {@link ValueOnlyWindowedValueCoder} to
+   *     optimize encoding, otherwise it creates a {@link FullWindowedValueCoder}.
+   */
+  public static <T> WindowedValueCoder<T> windowedValueCoder(
+      Coder<T> valueCoder, WindowingStrategy<?, ?> windowingStrategy) {
+    WindowFn<?, ?> windowFn = windowingStrategy.getWindowFn();
+    Coder<? extends BoundedWindow> windowCoder = windowFn.windowCoder();
+    return (windowFn instanceof GlobalWindows)
+        ? ValueOnlyWindowedValueCoder.of(valueCoder)
+        : FullWindowedValueCoder.of(valueCoder, windowCoder);
   }
 }

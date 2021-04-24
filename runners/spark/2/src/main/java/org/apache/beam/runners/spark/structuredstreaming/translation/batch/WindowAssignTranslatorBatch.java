@@ -25,6 +25,8 @@ import org.apache.beam.sdk.transforms.PTransform;
 import org.apache.beam.sdk.transforms.windowing.Window;
 import org.apache.beam.sdk.transforms.windowing.WindowFn;
 import org.apache.beam.sdk.util.WindowedValue;
+import org.apache.beam.sdk.util.WindowedValue.ValueOnlyWindowedValueCoder;
+import org.apache.beam.sdk.util.WindowedValue.WindowedValueCoder;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.spark.sql.Dataset;
 
@@ -49,8 +51,7 @@ class WindowAssignTranslatorBatch<T>
       context.putDataset(output, inputDataset);
     } else {
       WindowFn<T, ?> windowFn = assignTransform.getWindowFn();
-      WindowedValue.FullWindowedValueCoder<T> windowedValueCoder =
-          WindowedValue.FullWindowedValueCoder.of(input.getCoder(), windowFn.windowCoder());
+      WindowedValueCoder<T> windowedValueCoder = ValueOnlyWindowedValueCoder.of(input.getCoder());
       Dataset<WindowedValue<T>> outputDataset =
           inputDataset.map(
               WindowingHelpers.assignWindowsMapFunction(windowFn),

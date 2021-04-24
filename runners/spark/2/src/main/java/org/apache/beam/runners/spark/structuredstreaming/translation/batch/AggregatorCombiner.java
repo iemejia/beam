@@ -17,6 +17,8 @@
  */
 package org.apache.beam.runners.spark.structuredstreaming.translation.batch;
 
+import static org.apache.beam.runners.spark.structuredstreaming.translation.helpers.CoderHelpers.windowedValueCoder;
+
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -71,14 +73,8 @@ class AggregatorCombiner<K, InputT, AccumT, OutputT, W extends BoundedWindow>
     this.windowingStrategy = (WindowingStrategy<InputT, W>) windowingStrategy;
     this.timestampCombiner = windowingStrategy.getTimestampCombiner();
     this.accumulatorCoder = accumulatorCoder;
-    this.bufferEncoder =
-        IterableCoder.of(
-            WindowedValue.FullWindowedValueCoder.of(
-                accumulatorCoder, windowingStrategy.getWindowFn().windowCoder()));
-    this.outputCoder =
-        IterableCoder.of(
-            WindowedValue.FullWindowedValueCoder.of(
-                outputCoder, windowingStrategy.getWindowFn().windowCoder()));
+    this.bufferEncoder = IterableCoder.of(windowedValueCoder(accumulatorCoder, windowingStrategy));
+    this.outputCoder = IterableCoder.of(windowedValueCoder(outputCoder, windowingStrategy));
   }
 
   @Override
