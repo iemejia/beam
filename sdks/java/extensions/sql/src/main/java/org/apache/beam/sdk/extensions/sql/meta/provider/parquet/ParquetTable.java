@@ -33,6 +33,7 @@ import org.apache.beam.sdk.extensions.sql.meta.Table;
 import org.apache.beam.sdk.io.FileIO;
 import org.apache.beam.sdk.io.parquet.ParquetIO;
 import org.apache.beam.sdk.io.parquet.ParquetIO.Read;
+import org.apache.beam.sdk.io.parquet.ParquetIO.ReadFiles.BeamParquetInputFile;
 import org.apache.beam.sdk.options.PipelineOptions;
 import org.apache.beam.sdk.schemas.transforms.Convert;
 import org.apache.beam.sdk.schemas.utils.AvroUtils;
@@ -41,6 +42,11 @@ import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.PCollection.IsBounded;
 import org.apache.beam.sdk.values.POutput;
 import org.apache.beam.sdk.values.Row;
+import org.apache.parquet.ParquetReadOptions;
+import org.apache.parquet.hadoop.Footer;
+import org.apache.parquet.hadoop.ParquetFileReader;
+import org.apache.parquet.hadoop.metadata.BlockMetaData;
+import org.apache.parquet.io.InputFile;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -122,7 +128,18 @@ class ParquetTable extends SchemaBaseBeamTable implements Serializable {
 
   @Override
   public BeamTableStatistics getTableStatistics(PipelineOptions options) {
-    return BeamTableStatistics.BOUNDED_UNKNOWN;
+    String location = table.getLocation();
+    final org.apache.avro.Schema schema = AvroUtils.toAvroSchema(input.getSchema());
+    double rowCount = 0;
+    ParquetReadOptions options = ParquetReadOptions.builder().build();
+    InputFile inputFile = new BeamParquetInputFile(file.openSeekable());
+    final ParquetFileReader open = ParquetFileReader.open(inputFile, options);
+    for (Footer f : ParquetFileReader.readFooters(conf, fs, false)) {
+      for (BlockMetaData b : f.getParquetMetadata().getBlocks()) {
+        rowCount += b.getRowCount();
+      }
+    }
+    return BeamTableStatistics.createBoundedTableStatistics(rowCount);
   }
 
   @Override
