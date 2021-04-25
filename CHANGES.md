@@ -76,6 +76,7 @@
 ## Deprecations
 
 * X behavior is deprecated and will be removed in X versions ([BEAM-X](https://issues.apache.org/jira/browse/BEAM-X)).
+* Deprecate ParquetIO.withSplit(). This method will be removed in a future Beam version ([BEAM-12224](https://issues.apache.org/jira/browse/BEAM-12224)).
 
 ## Known Issues
 

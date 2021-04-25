@@ -387,7 +387,13 @@ public class ParquetIO {
       return toBuilder().setInferBeamSchema(inferBeamSchema).build();
     }
 
-    /** Enable the Splittable reading. */
+    /**
+     * Enable the Splittable reading.
+     *
+     * @deprecated You don't need to set withSplit because it is now the default behavior. This
+     *     method will be removed soon.
+     */
+    @Deprecated
     public Read withSplit() {
       return toBuilder().setSplittable(true).build();
     }
@@ -502,6 +508,11 @@ public class ParquetIO {
       return toBuilder().setConfiguration(new SerializableConfiguration(configuration)).build();
     }
 
+    /**
+     * @deprecated You don't need to set withSplit because it is now the default behavior. This
+     *     method will be removed soon.
+     */
+    @Deprecated
     public Parse<T> withSplit() {
       return toBuilder().setSplittable(true).build();
     }
@@ -588,6 +599,11 @@ public class ParquetIO {
       return toBuilder().setConfiguration(new SerializableConfiguration(configuration)).build();
     }
 
+    /**
+     * @deprecated You don't need to set withSplit because it is now the default behavior. This
+     *     method will be removed soon.
+     */
+    @Deprecated
     public ParseFiles<T> withSplit() {
       return toBuilder().setSplittable(true).build();
     }
@@ -735,6 +751,13 @@ public class ParquetIO {
     }
 
     /** Enable the Splittable reading. */
+    /**
+     * Enable the Splittable reading.
+     *
+     * @deprecated You don't need to set withSplit because it is now the default behavior. This
+     *     method will be removed soon.
+     */
+    @Deprecated
     public ReadFiles withSplit() {
       return toBuilder().setSplittable(true).build();
     }
