@@ -688,11 +688,13 @@ public class ParquetIO {
     @Override
     public PCollection<GenericRecord> expand(PCollection<ReadableFile> input) {
       checkNotNull(getSchema(), "Schema can not be null");
+      Class<? extends GenericData> modelClass =
+          (getAvroDataModel() != null) ? getAvroDataModel().getClass() : null;
       return input
           .apply(
               ParDo.of(
                   new SplitReadFn<>(
-                      getAvroDataModel(),
+                      modelClass,
                       getProjectionSchema(),
                       GenericRecordPassthroughFn.create(),
                       getConfiguration())))
@@ -731,30 +733,55 @@ public class ParquetIO {
 
     @BoundedPerElement
     static class SplitReadFn<T> extends DoFn<ReadableFile, T> {
-      private final Class<? extends GenericData> modelClass;
-      private final String requestSchemaString;
       // Default initial splitting the file into blocks of 64MB. Unit of SPLIT_LIMIT is byte.
       private static final long SPLIT_LIMIT = 64 * 1024 * 1024;
 
-      private @Nullable final SerializableConfiguration configuration;
-
+      private @Nullable transient GenericData model;
+      private final Class<? extends GenericData> modelClass;
+      private final String requestSchemaString;
+      private transient Schema requestSchema;
       private final SerializableFunction<GenericRecord, T> parseFn;
+      private final SerializableConfiguration configuration;
+      private transient ParquetReadOptions options;
 
       SplitReadFn(
-          GenericData model,
+          Class<? extends GenericData> modelClass,
           Schema requestSchema,
           SerializableFunction<GenericRecord, T> parseFn,
           @Nullable SerializableConfiguration configuration) {
+        this.modelClass = modelClass;
+        if (modelClass != null) {
+          try {
+            this.model = (GenericData) modelClass.getMethod("get").invoke(null);
+          } catch (Exception e) {
+            LOG.warn("Could not create a valid model for {}.", modelClass, e);
+          }
+        }
 
-        this.modelClass = model != null ? model.getClass() : null;
-        this.requestSchemaString = requestSchema != null ? requestSchema.toString() : null;
+        this.requestSchemaString = (requestSchema != null) ? requestSchema.toString() : null;
+        this.requestSchema =
+            (requestSchemaString != null) ? new Schema.Parser().parse(requestSchemaString) : null;
         this.parseFn = checkNotNull(parseFn, "GenericRecord parse function can't be null");
-        this.configuration = configuration;
+
+        Configuration conf = SerializableConfiguration.newConfiguration(configuration);
+        if (model != null
+            && (modelClass == GenericData.class || modelClass == SpecificData.class)) {
+          conf.setBoolean(AvroReadSupport.AVRO_COMPATIBILITY, true);
+        } else {
+          conf.setBoolean(AvroReadSupport.AVRO_COMPATIBILITY, false);
+        }
+        this.configuration = new SerializableConfiguration(conf);
+        this.options = HadoopReadOptions.builder(this.configuration.get()).build();
       }
 
-      private ParquetFileReader getParquetFileReader(ReadableFile file) throws Exception {
-        ParquetReadOptions options = HadoopReadOptions.builder(getConfWithModelClass()).build();
-        return ParquetFileReader.open(new BeamParquetInputFile(file.openSeekable()), options);
+      @Setup
+      public void setup() {
+        if (requestSchemaString != null) {
+          this.requestSchema = new Schema.Parser().parse(requestSchemaString);
+        }
+        if (this.options == null) {
+          this.options = HadoopReadOptions.builder(this.configuration.get()).build();
+        }
       }
 
       @ProcessElement
@@ -768,34 +795,28 @@ public class ParquetIO {
                 + tracker.currentRestriction().getFrom()
                 + " to "
                 + tracker.currentRestriction().getTo());
-        Configuration conf = getConfWithModelClass();
-        GenericData model = null;
-        if (modelClass != null) {
-          model = (GenericData) modelClass.getMethod("get").invoke(null);
-        }
         AvroReadSupport<GenericRecord> readSupport = new AvroReadSupport<>(model);
         if (requestSchemaString != null) {
           AvroReadSupport.setRequestedProjection(
-              conf, new Schema.Parser().parse(requestSchemaString));
+              this.configuration.get(), new Schema.Parser().parse(requestSchemaString));
         }
-        ParquetReadOptions options = HadoopReadOptions.builder(conf).build();
         try (ParquetFileReader reader =
             ParquetFileReader.open(new BeamParquetInputFile(file.openSeekable()), options)) {
           Filter filter = checkNotNull(options.getRecordFilter(), "filter");
-          Configuration hadoopConf = ((HadoopReadOptions) options).getConf();
           FileMetaData parquetFileMetadata = reader.getFooter().getFileMetaData();
           MessageType fileSchema = parquetFileMetadata.getSchema();
           Map<String, String> fileMetadata = parquetFileMetadata.getKeyValueMetaData();
           ReadSupport.ReadContext readContext =
               readSupport.init(
                   new InitContext(
-                      hadoopConf,
+                      this.configuration.get(),
                       Maps.transformValues(fileMetadata, ImmutableSet::of),
                       fileSchema));
           ColumnIOFactory columnIOFactory = new ColumnIOFactory(parquetFileMetadata.getCreatedBy());
 
           RecordMaterializer<GenericRecord> recordConverter =
-              readSupport.prepareForRead(hadoopConf, fileMetadata, fileSchema, readContext);
+              readSupport.prepareForRead(
+                  this.configuration.get(), fileMetadata, fileSchema, readContext);
           reader.setRequestedSchema(readContext.getRequestedSchema());
           MessageColumnIO columnIO =
               columnIOFactory.getColumnIO(readContext.getRequestedSchema(), fileSchema, true);
@@ -862,22 +883,10 @@ public class ParquetIO {
         }
       }
 
-      public Configuration getConfWithModelClass() throws ReflectiveOperationException {
-        Configuration conf = SerializableConfiguration.newConfiguration(configuration);
-        GenericData model = buildModelObject(modelClass);
-
-        if (model != null
-            && (model.getClass() == GenericData.class || model.getClass() == SpecificData.class)) {
-          conf.setBoolean(AvroReadSupport.AVRO_COMPATIBILITY, true);
-        } else {
-          conf.setBoolean(AvroReadSupport.AVRO_COMPATIBILITY, false);
-        }
-        return conf;
-      }
-
       @GetInitialRestriction
       public OffsetRange getInitialRestriction(@Element ReadableFile file) throws Exception {
-        try (ParquetFileReader reader = getParquetFileReader(file)) {
+        try (ParquetFileReader reader =
+            ParquetFileReader.open(new BeamParquetInputFile(file.openSeekable()), options)) {
           return new OffsetRange(0, reader.getRowGroups().size());
         }
       }
@@ -888,7 +897,8 @@ public class ParquetIO {
           OutputReceiver<OffsetRange> out,
           @Element ReadableFile file)
           throws Exception {
-        try (ParquetFileReader reader = getParquetFileReader(file)) {
+        try (ParquetFileReader reader =
+            ParquetFileReader.open(new BeamParquetInputFile(file.openSeekable()), options)) {
           List<BlockMetaData> rowGroups = reader.getRowGroups();
           for (OffsetRange offsetRange :
               splitBlockWithLimit(
@@ -940,7 +950,8 @@ public class ParquetIO {
 
       private CountAndSize getRecordCountAndSize(ReadableFile file, OffsetRange restriction)
           throws Exception {
-        try (ParquetFileReader reader = getParquetFileReader(file)) {
+        try (ParquetFileReader reader =
+            ParquetFileReader.open(new BeamParquetInputFile(file.openSeekable()), options)) {
           double size = 0;
           double recordCount = 0;
           for (long i = restriction.getFrom(); i < restriction.getTo(); i++) {
@@ -1185,12 +1196,6 @@ public class ParquetIO {
         outputStream.close();
       }
     }
-  }
-
-  /** Returns a model object created using provided modelClass or null. */
-  private static GenericData buildModelObject(@Nullable Class<? extends GenericData> modelClass)
-      throws ReflectiveOperationException {
-    return (modelClass == null) ? null : (GenericData) modelClass.getMethod("get").invoke(null);
   }
 
   /**
