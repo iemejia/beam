@@ -695,7 +695,7 @@ public class ParquetIO {
               ParDo.of(
                   new SplitReadFn<>(
                       modelClass,
-                      getProjectionSchema(),
+                      getSchema(),
                       GenericRecordPassthroughFn.create(),
                       getConfiguration())))
           .setCoder(getCollectionCoder());
@@ -796,10 +796,8 @@ public class ParquetIO {
                 + " to "
                 + tracker.currentRestriction().getTo());
         AvroReadSupport<GenericRecord> readSupport = new AvroReadSupport<>(model);
-        if (requestSchemaString != null) {
-          AvroReadSupport.setRequestedProjection(
-              this.configuration.get(), new Schema.Parser().parse(requestSchemaString));
-        }
+//        AvroReadSupport.setAvroReadSchema(this.configuration.get(), requestSchema);
+//        AvroReadSupport.setRequestedProjection(this.configuration.get(), requestSchema);
         try (ParquetFileReader reader =
             ParquetFileReader.open(new BeamParquetInputFile(file.openSeekable()), options)) {
           Filter filter = checkNotNull(options.getRecordFilter(), "filter");
