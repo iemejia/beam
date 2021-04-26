@@ -46,15 +46,14 @@ import org.apache.beam.sdk.coders.CoderRegistry;
 import org.apache.beam.sdk.coders.StringUtf8Coder;
 import org.apache.beam.sdk.io.FileIO;
 import org.apache.beam.sdk.io.FileIO.ReadableFile;
-import org.apache.beam.sdk.io.fs.ResourceId;
 import org.apache.beam.sdk.io.hadoop.SerializableConfiguration;
-import org.apache.beam.sdk.io.parquet.ParquetIO.ReadFiles.ReadFn;
 import org.apache.beam.sdk.io.parquet.ParquetIO.ReadFiles.SplitReadFn;
 import org.apache.beam.sdk.io.range.OffsetRange;
 import org.apache.beam.sdk.options.ValueProvider;
 import org.apache.beam.sdk.schemas.utils.AvroUtils;
 import org.apache.beam.sdk.transforms.Create;
 import org.apache.beam.sdk.transforms.DoFn;
+import org.apache.beam.sdk.transforms.DoFn.BoundedPerElement;
 import org.apache.beam.sdk.transforms.PTransform;
 import org.apache.beam.sdk.transforms.ParDo;
 import org.apache.beam.sdk.transforms.SerializableFunction;
@@ -77,7 +76,6 @@ import org.apache.parquet.column.page.PageReadStore;
 import org.apache.parquet.filter2.compat.FilterCompat;
 import org.apache.parquet.filter2.compat.FilterCompat.Filter;
 import org.apache.parquet.hadoop.ParquetFileReader;
-import org.apache.parquet.hadoop.ParquetReader;
 import org.apache.parquet.hadoop.ParquetWriter;
 import org.apache.parquet.hadoop.api.InitContext;
 import org.apache.parquet.hadoop.api.ReadSupport;
@@ -136,27 +134,15 @@ import org.slf4j.LoggerFactory;
  * PCollection<GenericRecord> output = files.apply(ParquetIO.readFiles(SCHEMA));
  * }</pre>
  *
- * <p>Splittable reading can be enabled by allowing the use of Splittable DoFn. It initially split
- * the files into blocks of 64MB and may dynamically split further for higher read efficiency. It
- * can be enabled by using {@link ParquetIO.Read#withSplit()}.
- *
- * <p>For example:
- *
- * <pre>{@code
- * PCollection<GenericRecord> records = pipeline.apply(ParquetIO.read(SCHEMA).from("/foo/bar").withSplit());
- * ...
- * }</pre>
- *
- * <p>Reading with projection can be enabled with the projection schema as following. Splittable
- * reading is enabled when reading with projection. The projection_schema contains only the column
- * that we would like to read and encoder_schema contains the schema to encode the output with the
- * unwanted columns changed to nullable. Partial reading provide decrease of reading time due to
- * partial processing of the data and partial encoding. The decrease in the reading time depends on
- * the relative position of the columns. Memory allocation is optimised depending on the encoding
- * schema. Note that the improvement is not as significant comparing to the proportion of the data
- * requested, since the processing time saved is only the time to read the unwanted columns, the
- * reader will still go over the data set according to the encoding schema since data for each
- * column in a row is stored interleaved.
+ * <p>Reading with projection can be enabled with the projection schema as following. The
+ * projection_schema contains only the column that we would like to read and encoder_schema contains
+ * the schema to encode the output with the unwanted columns changed to nullable. Partial reading
+ * provide decrease of reading time due to partial processing of the data and partial encoding. The
+ * decrease in the reading time depends on the relative position of the columns. Memory allocation
+ * is optimised depending on the encoding schema. Note that the improvement is not as significant
+ * comparing to the proportion of the data requested, since the processing time saved is only the
+ * time to read the unwanted columns, the reader will still go over the data set according to the
+ * encoding schema since data for each column in a row is stored interleaved.
  *
  * <pre>{@code
  * PCollection<GenericRecord> records =
@@ -269,7 +255,6 @@ public class ParquetIO {
     return new AutoValue_ParquetIO_Read.Builder()
         .setSchema(schema)
         .setInferBeamSchema(false)
-        .setSplittable(false)
         .build();
   }
 
@@ -279,7 +264,6 @@ public class ParquetIO {
    */
   public static ReadFiles readFiles(Schema schema) {
     return new AutoValue_ParquetIO_ReadFiles.Builder()
-        .setSplittable(false)
         .setInferBeamSchema(false)
         .setSchema(schema)
         .build();
@@ -290,10 +274,7 @@ public class ParquetIO {
    * pattern) and converts to user defined type using provided parseFn.
    */
   public static <T> Parse<T> parseGenericRecords(SerializableFunction<GenericRecord, T> parseFn) {
-    return new AutoValue_ParquetIO_Parse.Builder<T>()
-        .setParseFn(parseFn)
-        .setSplittable(false)
-        .build();
+    return new AutoValue_ParquetIO_Parse.Builder<T>().setParseFn(parseFn).build();
   }
 
   /**
@@ -302,10 +283,7 @@ public class ParquetIO {
    */
   public static <T> ParseFiles<T> parseFilesGenericRecords(
       SerializableFunction<GenericRecord, T> parseFn) {
-    return new AutoValue_ParquetIO_ParseFiles.Builder<T>()
-        .setParseFn(parseFn)
-        .setSplittable(false)
-        .build();
+    return new AutoValue_ParquetIO_ParseFiles.Builder<T>().setParseFn(parseFn).build();
   }
 
   /** Implementation of {@link #read(Schema)}. */
@@ -326,16 +304,12 @@ public class ParquetIO {
 
     abstract boolean getInferBeamSchema();
 
-    abstract boolean isSplittable();
-
     abstract Builder toBuilder();
 
     @AutoValue.Builder
     abstract static class Builder {
 
       abstract Builder setInferBeamSchema(boolean inferBeamSchema);
-
-      abstract Builder setSplittable(boolean split);
 
       abstract Builder setFilepattern(ValueProvider<String> filepattern);
 
@@ -365,7 +339,6 @@ public class ParquetIO {
     public Read withProjection(Schema projectionSchema, Schema encoderSchema) {
       return toBuilder()
           .setProjectionSchema(projectionSchema)
-          .setSplittable(true)
           .setEncoderSchema(encoderSchema)
           .build();
     }
@@ -389,7 +362,8 @@ public class ParquetIO {
 
     /** Enable the Splittable reading. */
     public Read withSplit() {
-      return toBuilder().setSplittable(true).build();
+      // BEAM-12070 NO-OP
+      return toBuilder().build();
     }
 
     /**
@@ -412,10 +386,8 @@ public class ParquetIO {
       ReadFiles readFiles =
           readFiles(getSchema())
               .withBeamSchemas(getInferBeamSchema())
-              .withAvroDataModel(getAvroDataModel());
-      if (isSplittable()) {
-        readFiles = readFiles.withSplit().withProjection(getProjectionSchema(), getEncoderSchema());
-      }
+              .withAvroDataModel(getAvroDataModel())
+              .withProjection(getProjectionSchema(), getEncoderSchema());
       if (getConfiguration() != null) {
         readFiles = readFiles.withConfiguration(getConfiguration().get());
       }
@@ -433,7 +405,6 @@ public class ParquetIO {
           .add(
               DisplayData.item("inferBeamSchema", getInferBeamSchema())
                   .withLabel("Infer Beam Schema"))
-          .add(DisplayData.item("splittable", isSplittable()))
           .addIfNotNull(DisplayData.item("projectionSchema", String.valueOf(getProjectionSchema())))
           .addIfNotNull(DisplayData.item("avroDataModel", String.valueOf(getAvroDataModel())));
       if (this.getConfiguration() != null) {
@@ -458,8 +429,6 @@ public class ParquetIO {
 
     abstract @Nullable SerializableConfiguration getConfiguration();
 
-    abstract boolean isSplittable();
-
     abstract Builder<T> toBuilder();
 
     @AutoValue.Builder
@@ -471,8 +440,6 @@ public class ParquetIO {
       abstract Builder<T> setCoder(Coder<T> coder);
 
       abstract Builder<T> setConfiguration(SerializableConfiguration configuration);
-
-      abstract Builder<T> setSplittable(boolean splittable);
 
       abstract Parse<T> build();
     }
@@ -503,7 +470,8 @@ public class ParquetIO {
     }
 
     public Parse<T> withSplit() {
-      return toBuilder().setSplittable(true).build();
+      // BEAM-12070 NO-OP
+      return toBuilder().build();
     }
 
     @Override
@@ -513,12 +481,7 @@ public class ParquetIO {
           .apply("Create filepattern", Create.ofProvider(getFilepattern(), StringUtf8Coder.of()))
           .apply(FileIO.matchAll())
           .apply(FileIO.readMatches())
-          .apply(
-              parseFilesGenericRecords(getParseFn())
-                  .toBuilder()
-                  .setCoder(getCoder())
-                  .setSplittable(isSplittable())
-                  .build());
+          .apply(parseFilesGenericRecords(getParseFn()).toBuilder().setCoder(getCoder()).build());
     }
 
     @Override
@@ -527,7 +490,6 @@ public class ParquetIO {
       builder
           .addIfNotNull(
               DisplayData.item("filePattern", getFilepattern()).withLabel("Input File Pattern"))
-          .add(DisplayData.item("splittable", isSplittable()))
           .add(DisplayData.item("parseFn", getParseFn().getClass()).withLabel("Parse function"));
       if (this.getCoder() != null) {
         builder.add(DisplayData.item("coder", getCoder().getClass()));
@@ -554,8 +516,6 @@ public class ParquetIO {
 
     abstract @Nullable SerializableConfiguration getConfiguration();
 
-    abstract boolean isSplittable();
-
     abstract Builder<T> toBuilder();
 
     @AutoValue.Builder
@@ -565,8 +525,6 @@ public class ParquetIO {
       abstract Builder<T> setCoder(Coder<T> coder);
 
       abstract Builder<T> setConfiguration(SerializableConfiguration configuration);
-
-      abstract Builder<T> setSplittable(boolean split);
 
       abstract ParseFiles<T> build();
     }
@@ -589,7 +547,8 @@ public class ParquetIO {
     }
 
     public ParseFiles<T> withSplit() {
-      return toBuilder().setSplittable(true).build();
+      // BEAM-12070 NO-OP
+      return toBuilder().build();
     }
 
     @Override
@@ -597,16 +556,14 @@ public class ParquetIO {
       checkArgument(!isGenericRecordOutput(), "Parse can't be used for reading as GenericRecord.");
 
       return input
-          .apply(ParDo.of(buildFileReadingFn()))
+          .apply(ParDo.of(new SplitReadFn<>(null, null, getParseFn(), getConfiguration())))
           .setCoder(inferCoder(input.getPipeline().getCoderRegistry()));
     }
 
     @Override
     public void populateDisplayData(DisplayData.Builder builder) {
       super.populateDisplayData(builder);
-      builder
-          .add(DisplayData.item("splittable", isSplittable()))
-          .add(DisplayData.item("parseFn", getParseFn().getClass()).withLabel("Parse function"));
+      builder.add(DisplayData.item("parseFn", getParseFn().getClass()).withLabel("Parse function"));
       if (this.getCoder() != null) {
         builder.add(DisplayData.item("coder", getCoder().getClass()));
       }
@@ -618,13 +575,6 @@ public class ParquetIO {
           }
         }
       }
-    }
-
-    /** Returns Splittable or normal Parquet file reading DoFn. */
-    private DoFn<ReadableFile, T> buildFileReadingFn() {
-      return isSplittable()
-          ? new SplitReadFn<>(null, null, getParseFn(), getConfiguration())
-          : new ReadFn<>(null, getParseFn(), getConfiguration());
     }
 
     /** Returns true if expected output is {@code PCollection<GenericRecord>}. */
@@ -679,8 +629,6 @@ public class ParquetIO {
 
     abstract boolean getInferBeamSchema();
 
-    abstract boolean isSplittable();
-
     abstract Builder toBuilder();
 
     @AutoValue.Builder
@@ -697,8 +645,6 @@ public class ParquetIO {
 
       abstract Builder setInferBeamSchema(boolean inferBeamSchema);
 
-      abstract Builder setSplittable(boolean split);
-
       abstract ReadFiles build();
     }
 
@@ -713,7 +659,6 @@ public class ParquetIO {
       return toBuilder()
           .setProjectionSchema(projectionSchema)
           .setEncoderSchema(encoderSchema)
-          .setSplittable(true)
           .build();
     }
 
@@ -736,13 +681,22 @@ public class ParquetIO {
 
     /** Enable the Splittable reading. */
     public ReadFiles withSplit() {
-      return toBuilder().setSplittable(true).build();
+      // BEAM-12070 NO-OP
+      return toBuilder().build();
     }
 
     @Override
     public PCollection<GenericRecord> expand(PCollection<ReadableFile> input) {
       checkNotNull(getSchema(), "Schema can not be null");
-      return input.apply(ParDo.of(getReaderFn())).setCoder(getCollectionCoder());
+      return input
+          .apply(
+              ParDo.of(
+                  new SplitReadFn<>(
+                      getAvroDataModel(),
+                      getProjectionSchema(),
+                      GenericRecordPassthroughFn.create(),
+                      getConfiguration())))
+          .setCoder(getCollectionCoder());
     }
 
     @Override
@@ -753,7 +707,6 @@ public class ParquetIO {
           .add(
               DisplayData.item("inferBeamSchema", getInferBeamSchema())
                   .withLabel("Infer Beam Schema"))
-          .add(DisplayData.item("splittable", isSplittable()))
           .addIfNotNull(DisplayData.item("projectionSchema", String.valueOf(getProjectionSchema())))
           .addIfNotNull(DisplayData.item("avroDataModel", String.valueOf(getAvroDataModel())));
       if (this.getConfiguration() != null) {
@@ -766,36 +719,22 @@ public class ParquetIO {
       }
     }
 
-    /** Returns Parquet file reading function based on {@link #isSplittable()}. */
-    private DoFn<ReadableFile, GenericRecord> getReaderFn() {
-      return isSplittable()
-          ? new SplitReadFn<>(
-              getAvroDataModel(),
-              getProjectionSchema(),
-              GenericRecordPassthroughFn.create(),
-              getConfiguration())
-          : new ReadFn<>(
-              getAvroDataModel(), GenericRecordPassthroughFn.create(), getConfiguration());
-    }
-
     /**
      * Returns {@link org.apache.beam.sdk.schemas.SchemaCoder} when using Beam schemas, {@link
      * AvroCoder} when not using Beam schema.
      */
     @Experimental(Kind.SCHEMAS)
     private Coder<GenericRecord> getCollectionCoder() {
-      Schema coderSchema =
-          getProjectionSchema() != null && isSplittable() ? getEncoderSchema() : getSchema();
-
+      Schema coderSchema = getProjectionSchema() != null ? getEncoderSchema() : getSchema();
       return getInferBeamSchema() ? AvroUtils.schemaCoder(coderSchema) : AvroCoder.of(coderSchema);
     }
 
-    @DoFn.BoundedPerElement
+    @BoundedPerElement
     static class SplitReadFn<T> extends DoFn<ReadableFile, T> {
       private final Class<? extends GenericData> modelClass;
       private final String requestSchemaString;
       // Default initial splitting the file into blocks of 64MB. Unit of SPLIT_LIMIT is byte.
-      private static final long SPLIT_LIMIT = 64000000;
+      private static final long SPLIT_LIMIT = 64 * 1024 * 1024;
 
       private @Nullable final SerializableConfiguration configuration;
 
@@ -1051,54 +990,6 @@ public class ParquetIO {
       // TODO(BEAM-10842): Refine the BlockTracker to provide better progress.
       public Progress getProgress() {
         return super.getProgress();
-      }
-    }
-
-    static class ReadFn<T> extends DoFn<ReadableFile, T> {
-
-      private final Class<? extends GenericData> modelClass;
-
-      private final SerializableFunction<GenericRecord, T> parseFn;
-
-      private final SerializableConfiguration configuration;
-
-      ReadFn(
-          GenericData model,
-          SerializableFunction<GenericRecord, T> parseFn,
-          SerializableConfiguration configuration) {
-        this.modelClass = model != null ? model.getClass() : null;
-        this.parseFn = checkNotNull(parseFn, "GenericRecord parse function is null");
-        this.configuration = configuration;
-      }
-
-      @ProcessElement
-      public void processElement(@Element ReadableFile file, OutputReceiver<T> receiver)
-          throws Exception {
-        if (!file.getMetadata().isReadSeekEfficient()) {
-          ResourceId filename = file.getMetadata().resourceId();
-          throw new RuntimeException(String.format("File has to be seekable: %s", filename));
-        }
-
-        SeekableByteChannel seekableByteChannel = file.openSeekable();
-
-        AvroParquetReader.Builder<GenericRecord> builder =
-            (AvroParquetReader.Builder<GenericRecord>)
-                AvroParquetReader.<GenericRecord>builder(
-                        new BeamParquetInputFile(seekableByteChannel))
-                    .withConf(SerializableConfiguration.newConfiguration(configuration));
-        if (modelClass != null) {
-          // all GenericData implementations have a static get method
-          builder = builder.withDataModel(buildModelObject(modelClass));
-        }
-
-        try (ParquetReader<GenericRecord> reader = builder.build()) {
-          GenericRecord read;
-          while ((read = reader.read()) != null) {
-            receiver.output(parseFn.apply(read));
-          }
-        }
-
-        seekableByteChannel.close();
       }
     }
 

@@ -65,6 +65,7 @@
 
 * X feature added (Java/Python) ([BEAM-X](https://issues.apache.org/jira/browse/BEAM-X)).
 * Added Spanner IO Performance tests for read and write. (Python) ([BEAM-10029](https://issues.apache.org/jira/browse/BEAM-10029))
+* Split-based reading is now the default behavior on ParquetIO ([BEAM-12070](https://issues.apache.org/jira/browse/BEAM-12070)).
 
 ## Breaking Changes
 
